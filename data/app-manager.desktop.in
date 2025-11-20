@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=AppManager
+GenericName=AppImage Manager
+Comment=Install and uninstall AppImage applications via drag and drop
+Categories=Utility;
+Exec=@bindir@/app-manager %u
+TryExec=@bindir@/app-manager
+Icon=org.github.AppManager
+Terminal=false
+Type=Application
+StartupNotify=true
+MimeType=application/x-iso9660-appimage;
+Keywords=AppImage;Installer;Applications;
+StartupWMClass=org.github.AppManager

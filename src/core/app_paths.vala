@@ -1,0 +1,49 @@
+namespace AppManager.Core {
+    public class AppPaths {
+        public static string data_dir {
+            owned get {
+                var dir = Path.build_filename(Environment.get_user_data_dir(), DATA_DIRNAME);
+                DirUtils.create_with_parents(dir, 0755);
+                return dir;
+            }
+        }
+
+        public static string registry_file {
+            owned get {
+                return Path.build_filename(data_dir, REGISTRY_FILENAME);
+            }
+        }
+
+        public static string applications_dir {
+            owned get {
+                var dir = Path.build_filename(Environment.get_home_dir(), APPLICATIONS_DIRNAME);
+                DirUtils.create_with_parents(dir, 0755);
+                return dir;
+            }
+        }
+
+        public static string extracted_root {
+            owned get {
+                var dir = Path.build_filename(applications_dir, EXTRACTED_DIRNAME);
+                DirUtils.create_with_parents(dir, 0755);
+                return dir;
+            }
+        }
+
+        public static string desktop_dir {
+            owned get {
+                var dir = Path.build_filename(Environment.get_user_data_dir(), "applications");
+                DirUtils.create_with_parents(dir, 0755);
+                return dir;
+            }
+        }
+
+        public static string icons_dir {
+            owned get {
+                var dir = Path.build_filename(Environment.get_user_data_dir(), "icons");
+                DirUtils.create_with_parents(dir, 0755);
+                return dir;
+            }
+        }
+    }
+}

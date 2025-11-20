@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.github.AppManager</id>
+  <name>AppManager</name>
+  <summary>Drag-and-drop AppImage installer for GNOME</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>AppManager lets you install or uninstall AppImages with a familiar drag-and-drop workflow inspired by macOS. It handles desktop integration, icon extraction, executable bits, and Nautilus context menus.</p>
+  </description>
+  <launchable type="desktop-id">app-manager.desktop</launchable>
+  <url type="homepage">https://github.com/arnis/AppManager</url>
+  <provides>
+    <binary>app-manager</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2025-11-17">
+      <description>
+        <p>Initial preview with drag-and-drop installs, dual install modes, Nautilus menus, and preferences UI.</p>
+      </description>
+    </release>
+  </releases>
+</component>
