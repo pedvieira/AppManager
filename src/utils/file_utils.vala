@@ -43,7 +43,7 @@ namespace AppManager.Utils {
         }
 
         public static string create_temp_dir(string prefix) throws Error {
-            var template = prefix + "XXXXXX";
+            var template = Path.build_filename("/tmp", prefix + "XXXXXX");
             return DirUtils.mkdtemp(template);
         }
 

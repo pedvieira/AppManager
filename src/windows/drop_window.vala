@@ -92,6 +92,9 @@ namespace AppManager {
 
             arrow_icon = new Gtk.Image.from_icon_name("pan-end-symbolic");
             arrow_icon.set_pixel_size(48);
+            arrow_icon.set_size_request(48, 48);
+            arrow_icon.halign = Gtk.Align.CENTER;
+            arrow_icon.valign = Gtk.Align.CENTER;
             arrow_icon.add_css_class("dim-label");
 
             drag_spinner = new Gtk.Spinner();
@@ -102,6 +105,7 @@ namespace AppManager {
             drag_spinner.visible = false;
 
             var arrow_overlay = new Gtk.Overlay();
+            arrow_overlay.set_size_request(48, 48);
             arrow_overlay.child = arrow_icon;
             arrow_overlay.add_overlay(drag_spinner);
             arrow_overlay.set_clip_overlay(drag_spinner, false);

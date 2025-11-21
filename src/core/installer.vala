@@ -42,21 +42,32 @@ namespace AppManager.Core {
             record.source_path = metadata.path;
             record.source_checksum = metadata.checksum;
 
-            if (mode == InstallMode.PORTABLE) {
-                install_portable(metadata, record);
-            } else {
-                install_extracted(metadata, record);
-            }
+            try {
+                if (mode == InstallMode.PORTABLE) {
+                    install_portable(metadata, record);
+                } else {
+                    install_extracted(metadata, record);
+                }
 
-            registry.register(record);
-            return record;
+                // Only delete source after successful installation
+                if (File.new_for_path(file_path).query_exists()) {
+                    File.new_for_path(file_path).delete();
+                }
+
+                registry.register(record);
+                return record;
+            } catch (Error e) {
+                // Cleanup on failure
+                cleanup_failed_installation(record);
+                throw e;
+            }
         }
 
         private void install_portable(AppImageMetadata metadata, InstallationRecord record) throws Error {
             progress("Preparing Applications folder…");
             var dest_path = Utils.FileUtils.unique_path(Path.build_filename(AppPaths.applications_dir, metadata.basename));
             var dest = File.new_for_path(dest_path);
-            metadata.file.move(dest, FileCopyFlags.OVERWRITE, null, null);
+            metadata.file.copy(dest, FileCopyFlags.OVERWRITE, null, null);
             ensure_executable(dest_path);
             record.installed_path = dest_path;
             finalize_desktop_and_icon(record, metadata, dest_path, dest_path);
@@ -69,7 +80,7 @@ namespace AppManager.Core {
             DirUtils.create_with_parents(dest_dir, 0755);
             run_7z({"x", metadata.path, "-o" + dest_dir, "-y"});
             var dest_appimage = Path.build_filename(dest_dir, metadata.basename);
-            metadata.file.move(File.new_for_path(dest_appimage), FileCopyFlags.OVERWRITE, null, null);
+            metadata.file.copy(File.new_for_path(dest_appimage), FileCopyFlags.OVERWRITE, null, null);
             var app_run = Path.build_filename(dest_dir, "AppRun");
             if (File.new_for_path(app_run).query_exists()) {
                 ensure_executable(app_run);
@@ -188,6 +199,29 @@ namespace AppManager.Core {
                 registry.unregister(record.id);
             } catch (Error e) {
                 throw new InstallerError.UNINSTALL_FAILED(e.message);
+            }
+        }
+
+        private void cleanup_failed_installation(InstallationRecord record) {
+            try {
+                if (record.installed_path != null) {
+                    var installed_file = File.new_for_path(record.installed_path);
+                    if (installed_file.query_exists()) {
+                        if (installed_file.query_file_type(FileQueryInfoFlags.NONE) == FileType.DIRECTORY) {
+                            Utils.FileUtils.remove_dir_recursive(record.installed_path);
+                        } else {
+                            installed_file.delete(null);
+                        }
+                    }
+                }
+                if (record.desktop_file != null && File.new_for_path(record.desktop_file).query_exists()) {
+                    File.new_for_path(record.desktop_file).delete(null);
+                }
+                if (record.icon_path != null && File.new_for_path(record.icon_path).query_exists()) {
+                    File.new_for_path(record.icon_path).delete(null);
+                }
+            } catch (Error e) {
+                warning("Failed to cleanup after installation error: %s", e.message);
             }
         }
 
