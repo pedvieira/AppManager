@@ -2,5 +2,6 @@
 <gresources>
   <gresource prefix="/com/github/AppManager">
     <file>ui/main-window-shortcuts.ui</file>
+    <file alias="com.github.AppManager.metainfo.xml">../com.github.AppManager.metainfo.xml</file>
   </gresource>
 </gresources>

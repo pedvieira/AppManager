@@ -1,5 +1,8 @@
 using AppManager.Core;
 
+[CCode (cname = "adw_about_dialog_new_from_appdata")]
+extern Adw.Dialog about_dialog_new_from_appdata_raw(string resource_path, string? release_notes_version);
+
 namespace AppManager {
     public class MainWindow : Adw.PreferencesWindow {
         private InstallationRegistry registry;
@@ -11,6 +14,7 @@ namespace AppManager {
             private Adw.AboutDialog? about_dialog;
             private Gtk.MenuButton? header_menu_button;
             private const string SHORTCUTS_RESOURCE = "/com/github/AppManager/ui/main-window-shortcuts.ui";
+            private const string APPDATA_RESOURCE = "/com/github/AppManager/com.github.AppManager.metainfo.xml";
 
         public MainWindow(Application app, InstallationRegistry registry, Installer installer, Settings settings) {
             Object(application: app,
@@ -227,15 +231,8 @@ namespace AppManager {
 
         public void present_about_dialog() {
             if (about_dialog == null) {
-                about_dialog = new Adw.AboutDialog();
-                about_dialog.application_name = APPLICATION_NAME;
-                about_dialog.application_icon = APPLICATION_ID;
+                about_dialog = (Adw.AboutDialog) about_dialog_new_from_appdata_raw(APPDATA_RESOURCE, null);
                 about_dialog.version = APPLICATION_VERSION;
-                about_dialog.developer_name = "Arnis Kemlers";
-                about_dialog.website = "https://github.com/kem-a/AppManager";
-                about_dialog.issue_url = "https://github.com/kem-a/AppManager/issues";
-                about_dialog.license_type = Gtk.License.GPL_3_0;
-                about_dialog.copyright = "© 2025 Arnis Kemlers";
             }
             about_dialog.present(this);
         }

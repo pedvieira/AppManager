@@ -2,6 +2,9 @@
 <component type="desktop-application">
   <id>com.github.AppManager</id>
   <name>AppManager</name>
+  <developer id="com.github.AppManager">
+    <name>Arnis Kemlers</name>
+  </developer>
   <developer_name>Arnis Kemlers</developer_name>
   <summary>Drag-and-drop AppImage installer for GNOME</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -11,11 +14,12 @@
   </description>
   <launchable type="desktop-id">com.github.AppManager.desktop</launchable>
   <url type="homepage">https://github.com/kem-a/AppManager</url>
+  <url type="bugtracker">https://github.com/kem-a/AppManager/issues</url>
   <provides>
     <binary>app-manager</binary>
   </provides>
   <releases>
-    <release version="0.1.0" date="2025-11-17">
+    <release version="0.1.0-alpha" date="2025-11-17">
       <description>
         <p>Initial preview with drag-and-drop installs, dual install modes, Nautilus menus, and preferences UI.</p>
       </description>
