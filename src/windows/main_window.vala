@@ -9,13 +9,14 @@ namespace AppManager {
         private InstallationRegistry registry;
         private Installer installer;
         private Settings settings;
-            private Adw.PreferencesGroup installs_group;
-            private Adw.PreferencesPage general_page;
-            private Gtk.ShortcutsWindow? shortcuts_window;
-            private Adw.AboutDialog? about_dialog;
-            private Gtk.MenuButton? header_menu_button;
-            private const string SHORTCUTS_RESOURCE = "/com/github/AppManager/ui/main-window-shortcuts.ui";
-            private const string APPDATA_RESOURCE = "/com/github/AppManager/com.github.AppManager.metainfo.xml";
+        private Adw.PreferencesGroup extracted_group;
+        private Adw.PreferencesGroup portable_group;
+        private Adw.PreferencesPage general_page;
+        private Gtk.ShortcutsWindow? shortcuts_window;
+        private Adw.AboutDialog? about_dialog;
+        private Gtk.MenuButton? header_menu_button;
+        private const string SHORTCUTS_RESOURCE = "/com/github/AppManager/ui/main-window-shortcuts.ui";
+        private const string APPDATA_RESOURCE = "/com/github/AppManager/com.github.AppManager.metainfo.xml";
 
         public MainWindow(Application app, InstallationRegistry registry, Installer installer, Settings settings) {
             Object(application: app,
@@ -40,9 +41,13 @@ namespace AppManager {
             general_page = new Adw.PreferencesPage();
             add(general_page);
 
-            installs_group = new Adw.PreferencesGroup();
-            installs_group.title = I18n.tr("Installed AppImages");
-            general_page.add(installs_group);
+            portable_group = new Adw.PreferencesGroup();
+            portable_group.title = I18n.tr("Portable AppImages");
+            general_page.add(portable_group);
+
+            extracted_group = new Adw.PreferencesGroup();
+            extracted_group.title = I18n.tr("Extracted AppImages");
+            general_page.add(extracted_group);
 
             this.close_request.connect(() => {
                 settings.set_int("window-width", this.get_width());
@@ -52,21 +57,124 @@ namespace AppManager {
         }
 
         private void refresh_installations() {
-            general_page.remove(installs_group);
-            installs_group = new Adw.PreferencesGroup();
-            installs_group.title = I18n.tr("Installed AppImages");
-            general_page.add(installs_group);
+            general_page.remove(portable_group);
+            general_page.remove(extracted_group);
+            
+            portable_group = new Adw.PreferencesGroup();
+            setup_group_header(portable_group, I18n.tr("Portable AppImages"), AppPaths.applications_dir);
+            
+            extracted_group = new Adw.PreferencesGroup();
+            setup_group_header(extracted_group, I18n.tr("Extracted AppImages"), AppPaths.extracted_root);
+            
+            general_page.add(portable_group);
+            general_page.add(extracted_group);
+            
             var records = registry.list();
+            var extracted_records = new Gee.ArrayList<InstallationRecord>();
+            var portable_records = new Gee.ArrayList<InstallationRecord>();
+            
+            foreach (var record in records) {
+                if (record.mode == InstallMode.EXTRACTED) {
+                    extracted_records.add(record);
+                } else {
+                    portable_records.add(record);
+                }
+            }
+
+            populate_group(portable_group, portable_records);
+            populate_group(extracted_group, extracted_records);
+
+            if (records.length == 0) {
+                var empty_row = new Adw.ActionRow();
+                empty_row.title = I18n.tr("Nothing installed yet");
+                empty_row.subtitle = I18n.tr("Install an AppImage by double-clicking it");
+                portable_group.add(empty_row);
+            }
+        }
+
+        private void setup_group_header(Adw.PreferencesGroup group, string title, string path) {
+            var display_path = format_display_path(path);
+
+            var header_container = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
+            header_container.set_halign(Gtk.Align.START);
+           
+            var title_row = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 6);
+            title_row.set_valign(Gtk.Align.CENTER);
+            title_row.set_halign(Gtk.Align.START);
+
+            var title_label = new Gtk.Label(title);
+            title_label.add_css_class("title-4");
+            title_label.set_xalign(0);
+            title_row.append(title_label);
+
+            var folder_button = new Gtk.Button.from_icon_name("folder-open-symbolic");
+            folder_button.add_css_class("flat");
+            folder_button.set_valign(Gtk.Align.CENTER);
+            folder_button.tooltip_text = I18n.tr("Open folder");
+            folder_button.clicked.connect(() => {
+                open_folder(path);
+            });
+            title_row.append(folder_button);
+
+            header_container.append(title_row);
+
+            var path_label = new Gtk.Label(display_path);
+            path_label.add_css_class("dim-label");
+            path_label.add_css_class("caption");
+            path_label.set_xalign(0);
+            path_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE);
+            header_container.append(path_label);
+
+            group.title = null;
+            group.description = null;
+            group.set_header_suffix(header_container);
+        }
+
+        private string format_display_path(string path) {
+            var home = Environment.get_home_dir();
+            if (path.has_prefix(home)) {
+                if (path.length == home.length) {
+                    return "~";
+                }
+                var remainder = path.substring(home.length);
+                if (!remainder.has_prefix("/")) {
+                    remainder = "/" + remainder;
+                }
+                return "~" + remainder;
+            }
+            return path;
+        }
+
+        private void open_folder(string path) {
+            try {
+                var file = File.new_for_path(path);
+                var launcher = new Gtk.FileLauncher(file);
+                launcher.launch.begin(this, null);
+            } catch (Error e) {
+                warning("Failed to open folder %s: %s", path, e.message);
+            }
+        }
+
+        private void populate_group(Adw.PreferencesGroup group, Gee.ArrayList<InstallationRecord> records) {
             foreach (var record in records) {
                 var row = new Adw.ActionRow();
                 row.title = record.name;
-                string details_line;
+                
+                string version_text;
                 if (record.version != null && record.version.strip() != "") {
-                    details_line = I18n.tr("Version %s").printf(record.version);
+                    version_text = I18n.tr("Version %s").printf(record.version);
                 } else {
-                    details_line = record.installed_path;
+                    version_text = I18n.tr("Version unknown");
                 }
-                row.subtitle = "%s\n%s".printf(record.mode_label(), details_line);
+                row.subtitle = version_text;
+
+                // Add icon if available
+                if (record.icon_path != null && record.icon_path.strip() != "") {
+                    var icon_image = load_app_icon(record.icon_path);
+                    if (icon_image != null) {
+                        row.add_prefix(icon_image);
+                    }
+                }
 
                 var remove_button = new Gtk.Button.from_icon_name("user-trash-symbolic");
                 remove_button.tooltip_text = I18n.tr("Move to trash");
@@ -75,15 +183,47 @@ namespace AppManager {
                 remove_button.clicked.connect(() => { uninstall_record(record); });
                 row.add_suffix(remove_button);
 
-                installs_group.add(row);
+                group.add(row);
+            }
+        }
+
+        private Gtk.Image? load_app_icon(string icon_path) {
+            // Extract icon name from the path (without extension)
+            var icon_file = File.new_for_path(icon_path);
+            var icon_basename = icon_file.get_basename();
+            string icon_name = icon_basename;
+            
+            // Remove file extension to get icon name
+            var last_dot = icon_basename.last_index_of(".");
+            if (last_dot > 0) {
+                icon_name = icon_basename.substring(0, last_dot);
             }
 
-            if (records.length == 0) {
-                var empty_row = new Adw.ActionRow();
-                empty_row.title = I18n.tr("Nothing installed yet");
-                empty_row.subtitle = I18n.tr("Install an AppImage by double-clicking it");
-                installs_group.add(empty_row);
+            // First try to load from icon theme
+            var icon_theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default());
+            if (icon_theme.has_icon(icon_name)) {
+                var icon_image = new Gtk.Image.from_icon_name(icon_name);
+                icon_image.set_pixel_size(48);
+                debug("Loaded icon '%s' from icon theme", icon_name);
+                return icon_image;
             }
+
+            // Fallback to loading from file path
+            if (icon_file.query_exists()) {
+                try {
+                    var icon_texture = Gdk.Texture.from_file(icon_file);
+                    var icon_image = new Gtk.Image.from_paintable(icon_texture);
+                    icon_image.set_pixel_size(48);
+                    debug("Loaded icon from file: %s", icon_path);
+                    return icon_image;
+                } catch (Error e) {
+                    warning("Failed to load icon from file %s: %s", icon_path, e.message);
+                }
+            } else {
+                debug("Icon file does not exist: %s", icon_path);
+            }
+
+            return null;
         }
 
         public void present_shortcuts_dialog() {
