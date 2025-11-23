@@ -206,7 +206,7 @@ namespace AppManager.Core {
                 var stored_icon = Path.build_filename(AppPaths.icons_dir, "%s%s".printf(icon_name_for_desktop, icon_extension));
                 Utils.FileUtils.file_copy(icon_path, stored_icon);
                 
-                var desktop_contents = rewrite_desktop(desktop_path, exec_path, icon_name_for_desktop, record.installed_path, is_terminal_app);
+                var desktop_contents = rewrite_desktop(desktop_path, exec_path, icon_name_for_desktop, record.installed_path, is_terminal_app, record.mode);
                 var desktop_filename = "%s-%s.desktop".printf("appmanager", final_slug);
                 var desktop_destination = Path.build_filename(AppPaths.desktop_dir, desktop_filename);
                 Utils.FileUtils.ensure_parent(desktop_destination);
@@ -281,7 +281,7 @@ namespace AppManager.Core {
             }
         }
 
-        private string rewrite_desktop(string desktop_path, string exec_target, string icon_name, string installed_path, bool is_terminal) throws Error {
+        private string rewrite_desktop(string desktop_path, string exec_target, string icon_name, string installed_path, bool is_terminal, InstallMode mode) throws Error {
             string contents;
             if (!GLib.FileUtils.get_contents(desktop_path, out contents)) {
                 throw new InstallerError.DESKTOP_MISSING("Failed to read desktop file");
@@ -322,7 +322,16 @@ namespace AppManager.Core {
                 }
                 // Replace Exec in Desktop Entry section
                 if (trimmed.has_prefix("Exec=")) {
-                    output_lines.add("Exec=%s".printf(exec_target));
+                    // For PORTABLE mode: preserve command-line arguments from original desktop file
+                    // For EXTRACTED mode: drop arguments since we're running AppRun directly
+                    if (mode == InstallMode.PORTABLE) {
+                        var exec_value = trimmed.substring("Exec=".length).strip();
+                        var parts = exec_value.split(" ", 2);
+                        string args = (parts.length > 1) ? " " + parts[1] : "";
+                        output_lines.add("Exec=%s%s".printf(exec_target, args));
+                    } else {
+                        output_lines.add("Exec=%s".printf(exec_target));
+                    }
                     continue;
                 }
 
