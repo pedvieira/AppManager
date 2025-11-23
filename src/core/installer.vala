@@ -182,10 +182,11 @@ namespace AppManager.Core {
                 if (original_icon_name != null && original_icon_name != "") {
                     // Strip path if present
                     var icon_basename = Path.get_basename(original_icon_name);
-                    // Strip extension
-                    var dot_index = icon_basename.last_index_of_char('.');
-                    if (dot_index > 0) {
-                        icon_name_for_desktop = icon_basename.substring(0, dot_index);
+                    // Strip .svg or .png extension
+                    if (icon_basename.has_suffix(".svg")) {
+                        icon_name_for_desktop = icon_basename.substring(0, icon_basename.length - 4);
+                    } else if (icon_basename.has_suffix(".png")) {
+                        icon_name_for_desktop = icon_basename.substring(0, icon_basename.length - 4);
                     } else {
                         icon_name_for_desktop = icon_basename;
                     }
@@ -197,9 +198,10 @@ namespace AppManager.Core {
                 // Install icon to ~/.local/share/icons with extension
                 var icon_file_basename = Path.get_basename(icon_path);
                 var icon_extension = "";
-                var ext_index = icon_file_basename.last_index_of_char('.');
-                if (ext_index >= 0) {
-                    icon_extension = icon_file_basename.substring(ext_index);
+                if (icon_file_basename.has_suffix(".svg")) {
+                    icon_extension = ".svg";
+                } else if (icon_file_basename.has_suffix(".png")) {
+                    icon_extension = ".png";
                 }
                 var stored_icon = Path.build_filename(AppPaths.icons_dir, "%s%s".printf(icon_name_for_desktop, icon_extension));
                 Utils.FileUtils.file_copy(icon_path, stored_icon);
