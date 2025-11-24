@@ -500,20 +500,16 @@ namespace AppManager {
             var actions_group = new Adw.PreferencesGroup();
             actions_group.title = I18n.tr("Actions");
             
-            var uninstall_row = new Adw.ActionRow();
-            uninstall_row.title = I18n.tr("Uninstall");
-            uninstall_row.subtitle = I18n.tr("Move this AppImage to trash");
-            uninstall_row.activatable = true;
-            uninstall_row.activated.connect(() => {
+            var delete_row = new Adw.ButtonRow();
+            delete_row.title = I18n.tr("Delete Application");
+            delete_row.start_icon_name = "user-trash-symbolic";
+            delete_row.add_css_class("destructive-action");
+            delete_row.activated.connect(() => {
                 navigation_view.pop();
                 uninstall_record(record);
             });
             
-            var trash_icon = new Gtk.Image.from_icon_name("user-trash-symbolic");
-            trash_icon.add_css_class("error");
-            uninstall_row.add_prefix(trash_icon);
-            
-            actions_group.add(uninstall_row);
+            actions_group.add(delete_row);
             detail_page.add(actions_group);
             
             var detail_toolbar = create_toolbar_with_header(detail_page, false);
