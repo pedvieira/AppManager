@@ -27,11 +27,41 @@ namespace AppManager {
             this.settings = settings;
             add_css_class("devel");
             this.set_default_size(settings.get_int("window-width"), settings.get_int("window-height"));
+            load_custom_css();
             build_ui();
             refresh_installations();
             registry.changed.connect(() => {
                 refresh_installations();
             });
+        }
+
+        private void load_custom_css() {
+            var provider = new Gtk.CssProvider();
+            string css = """
+                .card.accent {
+                    background-color: @accent_bg_color;
+                    color: @accent_fg_color;
+                }
+                .card.accent label {
+                    color: @accent_fg_color;
+                }
+                .card.destructive {
+                    background-color: @destructive_bg_color;
+                    color: @destructive_fg_color;
+                }
+                .card.destructive label {
+                    color: @destructive_fg_color;
+                }
+                .card.terminal {
+                    background-color: #535252ff;
+                    color: #ffffff;
+                }
+                .card.terminal label {
+                    color: #ffffff;
+                }
+            """;
+            provider.load_from_data(css.data);
+            Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
         }
 
         private void build_ui() {
@@ -163,10 +193,100 @@ namespace AppManager {
 
         private void open_url(string url) {
             try {
-                var launcher = new Gtk.UriLauncher(url);
-                launcher.launch.begin(this, null);
+                AppInfo.launch_default_for_uri(url, null);
             } catch (Error e) {
                 warning("Failed to open URL %s: %s", url, e.message);
+            }
+        }
+        
+        private Gtk.Box create_info_card(string text) {
+            var card = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
+            card.add_css_class("card");
+            
+            var label = new Gtk.Label(text);
+            label.add_css_class("caption");
+            label.set_margin_start(8);
+            label.set_margin_end(8);
+            label.set_margin_top(6);
+            label.set_margin_bottom(6);
+            
+            card.append(label);
+            return card;
+        }
+        
+        private int64 calculate_installation_size(InstallationRecord record) {
+            int64 total_size = 0;
+            
+            try {
+                // Add installed path size (AppImage or extracted directory)
+                if (record.installed_path != null && record.installed_path != "") {
+                    total_size += get_path_size(record.installed_path);
+                }
+                
+                // Add icon size if exists
+                if (record.icon_path != null && record.icon_path != "") {
+                    var icon_file = File.new_for_path(record.icon_path);
+                    if (icon_file.query_exists()) {
+                        var info = icon_file.query_info(FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
+                        total_size += info.get_size();
+                    }
+                }
+                
+                // Add desktop file size
+                if (record.desktop_file != null && record.desktop_file != "") {
+                    var desktop_file = File.new_for_path(record.desktop_file);
+                    if (desktop_file.query_exists()) {
+                        var info = desktop_file.query_info(FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
+                        total_size += info.get_size();
+                    }
+                }
+            } catch (Error e) {
+                warning("Failed to calculate size for %s: %s", record.name, e.message);
+            }
+            
+            return total_size;
+        }
+        
+        private int64 get_path_size(string path) throws Error {
+            var file = File.new_for_path(path);
+            if (!file.query_exists()) {
+                return 0;
+            }
+            
+            var info = file.query_info(FileAttribute.STANDARD_TYPE + "," + FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
+            
+            if (info.get_file_type() == FileType.DIRECTORY) {
+                int64 size = 0;
+                var enumerator = file.enumerate_children(FileAttribute.STANDARD_NAME + "," + FileAttribute.STANDARD_TYPE + "," + FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
+                FileInfo child_info;
+                while ((child_info = enumerator.next_file()) != null) {
+                    var child = file.get_child(child_info.get_name());
+                    if (child_info.get_file_type() == FileType.DIRECTORY) {
+                        size += get_path_size(child.get_path());
+                    } else {
+                        size += child_info.get_size();
+                    }
+                }
+                return size;
+            } else {
+                return info.get_size();
+            }
+        }
+        
+        private string format_size(int64 bytes) {
+            const string[] units = {"B", "KB", "MB", "GB", "TB"};
+            double size = (double)bytes;
+            int unit_index = 0;
+            
+            while (size >= 1024.0 && unit_index < units.length - 1) {
+                size /= 1024.0;
+                unit_index++;
+            }
+            
+            if (unit_index == 0) {
+                return "%.0f %s".printf(size, units[unit_index]);
+            } else {
+                return "%.1f %s".printf(size, units[unit_index]);
             }
         }
 
@@ -376,16 +496,67 @@ namespace AppManager {
             header_box.append(version_label);
             
             var header_row = new Adw.PreferencesRow();
+            header_row.set_activatable(false);
             header_row.set_child(header_box);
             header_group.add(header_row);
             detail_page.add(header_group);
             
+            // Load desktop file properties early for Terminal and NoDisplay checks
+            var desktop_props = load_desktop_file_properties(record.desktop_file);
+            
+            // Cards group - adding box directly without PreferencesRow wrapper
+            var cards_group = new Adw.PreferencesGroup();
+            
+            // Cards container (displayed without background)
+            var cards_box = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 8);
+            cards_box.set_halign(Gtk.Align.CENTER);
+            
+            // Install mode card
+            var mode_card = create_info_card(
+                record.mode == InstallMode.PORTABLE ? I18n.tr("Portable") : I18n.tr("Extracted")
+            );
+            if (record.mode == InstallMode.EXTRACTED) {
+                mode_card.add_css_class("accent");
+            }
+            cards_box.append(mode_card);
+            
+            // Size on disk card
+            var size = calculate_installation_size(record);
+            var size_card = create_info_card(format_size(size));
+            cards_box.append(size_card);
+            
+            // Installation location card
+            var is_user_install = record.installed_path.has_prefix(Environment.get_home_dir());
+            var location_card = create_info_card(
+                is_user_install ? I18n.tr("User") : I18n.tr("System")
+            );
+            if (!is_user_install) {
+                location_card.add_css_class("destructive");
+            }
+            cards_box.append(location_card);
+            
+            // Terminal app card (only show if Terminal=true)
+            var terminal_value = desktop_props.get("Terminal") ?? "false";
+            if (terminal_value.down() == "true") {
+                var terminal_card = create_info_card(I18n.tr("Terminal"));
+                terminal_card.add_css_class("terminal");
+                cards_box.append(terminal_card);
+            }
+            
+            // Hidden from app drawer card (only show if NoDisplay=true)
+            var nodisplay_value = desktop_props.get("NoDisplay") ?? "false";
+            if (nodisplay_value.down() == "true") {
+                var hidden_card = create_info_card(I18n.tr("Hidden"));
+                cards_box.append(hidden_card);
+            }
+            
+            // Add the box directly - it will be added to a separate box without the list background
+            cards_group.add(cards_box);
+            detail_page.add(cards_group);
+            
             // Properties group
             var props_group = new Adw.PreferencesGroup();
             props_group.title = I18n.tr("Properties");
-            
-            // Load desktop file properties
-            var desktop_props = load_desktop_file_properties(record.desktop_file);
             
             // Command line arguments (extracted from Exec field)
             var exec_row = new Adw.EntryRow();
@@ -472,23 +643,12 @@ namespace AppManager {
             });
             props_group.add(update_row);
             
-            // Terminal app toggle
-            var terminal_row = new Adw.SwitchRow();
-            terminal_row.title = I18n.tr("Terminal app");
-            terminal_row.subtitle = I18n.tr("Run in terminal emulator");
-            var terminal_value = desktop_props.get("Terminal") ?? "false";
-            terminal_row.active = (terminal_value.down() == "true");
-            terminal_row.notify["active"].connect(() => {
-                update_desktop_file_property(record.desktop_file, "Terminal", terminal_row.active ? "true" : "false");
-            });
-            props_group.add(terminal_row);
-            
             // NoDisplay toggle
             var nodisplay_row = new Adw.SwitchRow();
             nodisplay_row.title = I18n.tr("Hide from app drawer");
             nodisplay_row.subtitle = I18n.tr("Don't show in application menu");
-            var nodisplay_value = desktop_props.get("NoDisplay") ?? "false";
-            nodisplay_row.active = (nodisplay_value.down() == "true");
+            var nodisplay_current = desktop_props.get("NoDisplay") ?? "false";
+            nodisplay_row.active = (nodisplay_current.down() == "true");
             nodisplay_row.notify["active"].connect(() => {
                 update_desktop_file_property(record.desktop_file, "NoDisplay", nodisplay_row.active ? "true" : "false");
             });
