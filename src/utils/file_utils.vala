@@ -74,5 +74,31 @@ namespace AppManager.Utils {
                 warning("Failed to delete %s: %s", path, e.message);
             }
         }
+
+        public static int64 get_path_size(string path) throws Error {
+            var file = File.new_for_path(path);
+            if (!file.query_exists()) {
+                return 0;
+            }
+            
+            var info = file.query_info(FileAttribute.STANDARD_TYPE + "," + FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
+            
+            if (info.get_file_type() == FileType.DIRECTORY) {
+                int64 size = 0;
+                var enumerator = file.enumerate_children(FileAttribute.STANDARD_NAME + "," + FileAttribute.STANDARD_TYPE + "," + FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
+                FileInfo child_info;
+                while ((child_info = enumerator.next_file()) != null) {
+                    var child = file.get_child(child_info.get_name());
+                    if (child_info.get_file_type() == FileType.DIRECTORY) {
+                        size += get_path_size(child.get_path());
+                    } else {
+                        size += child_info.get_size();
+                    }
+                }
+                return size;
+            } else {
+                return info.get_size();
+            }
+        }
     }
 }

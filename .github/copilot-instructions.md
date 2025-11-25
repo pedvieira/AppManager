@@ -9,16 +9,18 @@ You are an expert Vala/GTK developer working on AppManager, a Libadwaita utility
    - `extensions/nautilus_extension.vala`: Nautilus context menus for `.AppImage` files; shells out to the main binary via the same CLI flags.
 - **Core modules**:
    - `installer.vala`: Orchestrates install/uninstall, including move vs extract, 7z calls, `.desktop` rewrite, icon installation, and optional terminal symlink creation.
-   - `installation_registry.vala`: JSON registry at `~/.local/share/app-manager/installations.json`. This is the single source of truth for install state—prefer it over raw filesystem checks.
+   - `installation_registry.vala`: JSON registry at `~/.local/share/app-manager/installations.json`. This is the single source of truth for install state—prefer it over raw filesystem checks. Uses `json-glib-1.0`.
    - `installation_record.vala`: Defines `InstallMode` enum (`PORTABLE`, `EXTRACTED`) and record (de)serialization helpers.
    - `app_image_metadata.vala`: Lightweight AppImage inspection (SHA256 checksum, display name, executability, basename helpers).
    - `app_image_assets.vala`: 7z-based helpers for extracting `.desktop` and icon assets into temp directories.
    - `app_paths.vala` / `app_constants.vala`: Centralized path and ID definitions (applications dir, extracted root, icons dir, desktop dir, registry file, application ID, MIME type).
    - `utils/file_utils.vala`: SHA256 checksums, unique path generation, recursive directory removal, temp dir creation, file copy utilities.
-- **UI layer (`src/windows/`)**:
+- **UI layer (`src/windows/` & `src/utils/`)**:
    - `drop_window.vala`: macOS-style drag-and-drop installer; allows choosing install mode, checks for upgrades via the registry, and calls `Installer`.
    - `main_window.vala`: Installed apps list backed by `InstallationRegistry`.
+   - `details_window.vala`: Detailed view of an installed app, allowing uninstallation.
    - `dialog_window.vala`: Shared dialog patterns for confirmations and warnings.
+   - `utils/ui_utils.vala`: UI helpers for loading icons (theme vs file) and formatting file sizes.
 
 ## Installation & Desktop Integration Flows
 - **Install modes** (`InstallMode` in `installation_record.vala`, logic in `installer.vala`):
@@ -37,7 +39,8 @@ You are an expert Vala/GTK developer working on AppManager, a Libadwaita utility
    - Temp extraction directories are automatically cleaned after installation completes.
 
 ## Conventions & Patterns
-- **Language/stack**: Vala targeting GLib 2.74+, GTK4, Libadwaita. Use 4-space indentation and existing namespaces (`AppManager`, `AppManager.Core`, `AppManager.Utils`).
+- **Language/stack**: Vala targeting GLib 2.74+, GTK4, Libadwaita. Dependencies: `libadwaita-1`, `gio-2.0`, `json-glib-1.0`, `gee-0.8`.
+- **Code Style**: Use 4-space indentation. Namespaces: `AppManager`, `AppManager.Core`, `AppManager.Utils`.
 - **Error handling**:
    - Prefer `InstallerError` for install/uninstall failures: `ALREADY_INSTALLED`, `DESKTOP_MISSING`, `EXTRACTION_FAILED`, `SEVEN_ZIP_MISSING`, `UNINSTALL_FAILED`, `UNKNOWN`.
    - Wrap file I/O, JSON parsing, and subprocess spawning (`7z`, AppImage tools) in `try/catch (Error e)`; log via `warning()`, `debug()`, or `critical()`.

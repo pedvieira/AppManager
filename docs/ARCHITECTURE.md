@@ -3,28 +3,32 @@
 AppManager is a Libadwaita + GTK4 Vala application that provides a rich, guided workflow for installing and managing AppImages on GNOME 45–49 desktops. The solution consists of four major pieces:
 
 1. **Core Application (`src/`)**
-   - `AppManager.Application` (`application.vala`) bootstraps an `Adw.Application`, parses URI/file arguments, and decides whether to show the drop-style install window or the main preferences UI.
-   - `MainWindow` (`windows/main_window.vala`) is an `Adw.PreferencesWindow` exposing settings stored via `GSettings` (default install mode, automatic cleanup, Nautilus integration toggles, etc.) plus a summary list of installed AppImages pulled from the registry.
-   - `DropWindow` (`windows/drop_window.vala`) surfaces when the app is launched with an AppImage. It shows a two-column Adwaita card mimicking the macOS drag-to-install sheet: left is the source AppImage icon, right is the `~/Applications` destination icon. Dragging the app icon onto the destination (or clicking an Install button) triggers the installer pipeline. The window embeds a `Gtk.DragSource` and `Gtk.DropTarget` so the user must perform a drag gesture to continue, matching the requirement.
-   - `Installer` (`services/installer.vala`) encapsulates both install flows:
+   - `AppManager.Application` (`application.vala`) bootstraps an `Adw.Application`, parses URI/file arguments, and decides whether to show the drop-style install window or the main UI.
+   - `MainWindow` (`windows/main_window.vala`) is an `Adw.Window` containing an `Adw.NavigationView`. It displays a list of installed AppImages (grouped by install mode) backed by the registry, and allows navigation to details.
+   - `DetailsWindow` (`windows/details_window.vala`) provides a detailed view of a specific installation, allowing the user to uninstall or view metadata.
+   - `DropWindow` (`windows/drop_window.vala`) surfaces when the app is launched with an AppImage. It shows a two-column Adwaita card mimicking the macOS drag-to-install sheet: left is the source AppImage icon, right is the `~/Applications` destination icon. Dragging the app icon onto the destination (or clicking an Install button) triggers the installer pipeline.
+   - `Installer` (`core/installer.vala`) encapsulates both install flows:
      * **Portable Move** – executable AppImages are chmod-ed (if needed), renamed if collisions occur, moved into `~/Applications`, and their `.desktop` launcher is unpacked with `7z` and rewritten to point the `Exec` line directly at the `.AppImage`.
      * **Extracted Install** – non-executable AppImages are fully extracted with `7z` into `~/Applications/.installed/<name>/`. The `.desktop` file’s `Exec` now targets the `AppRun` entry point inside the extracted tree.
      Both flows also copy icons where available, refresh the desktop database, and emit installation metadata.
-   - `InstallationRegistry` (`services/installation_registry.vala`) persists install state inside `~/.local/share/app-manager/installations.json`, enabling detection of “already installed” files for UI and Nautilus logic.
-   - `AppImageMetadata` (`models/app_image_metadata.vala`) performs lightweight inspection: derives a user-friendly name, determines whether the file is executable, probes for embedded desktop/icon resources via `7z l`, etc.
+   - `InstallationRegistry` (`core/installation_registry.vala`) persists install state inside `~/.local/share/app-manager/installations.json`, enabling detection of “already installed” files for UI and Nautilus logic. Uses `json-glib-1.0`.
+   - `AppImageMetadata` (`core/app_image_metadata.vala`) performs lightweight inspection: derives a user-friendly name, determines whether the file is executable, probes for embedded desktop/icon resources via `7z l`, etc.
+   - `AppPaths` & `AppConstants` (`core/`) provide centralized definitions for paths (`~/Applications`, `~/.local/share/applications`, etc.) and constants.
+   - `Utils` (`utils/`) contains helpers for file operations (`file_utils.vala`) and UI tasks (`ui_utils.vala`).
 
-2. **GNOME/Nautilus Extension (`extensions/nautilus-app-manager.vala`)**
-   - Builds a `libnautilus-app-manager.so` implementing `Nautilus.MenuProvider`. It surfaces two context menu items—“Install AppImage” & “Move AppImage to Trash”. Availability is determined by consulting the shared installation registry through D-Bus helpers exposed by the core application.
-   - Selecting “Install” launches the main executable with the selected AppImage path; “Move to Trash” asks the registry (for metadata) and deletes the installed payload (either the moved `.AppImage` or extracted directory) before trashing.
+2. **GNOME/Nautilus Extension (`extensions/nautilus_extension.vala`)**
+   - Builds a `libnautilus-app-manager.so` implementing `Nautilus.MenuProvider`. It surfaces two context menu items—“Install AppImage” & “Move AppImage to Trash”.
+   - Availability is determined by consulting the shared `InstallationRegistry` (reading the JSON database directly).
+   - Selecting “Install” or “Move to Trash” spawns the main `app-manager` executable with `--install` or `--uninstall` CLI arguments, delegating the actual work to the core application.
 
 3. **Data & Integration Assets (`data/`)**
-   - `app-manager.desktop` registers the app as the default handler for the `application/x-iso9660-appimage` MIME type and exposes a regular launcher for opening preferences.
+   - `app-manager.desktop` registers the app as the default handler for the `application/x-iso9660-appimage` MIME type and exposes a regular launcher for opening the main window.
    - `com.github.AppManager.gschema.xml` defines GSettings keys used by the app.
    - `app-manager.metainfo.xml`, icons, and Nautilus extension desktop hooks are also stored here.
 
 4. **Build System (Meson + Ninja)**
    - Top-level `meson.build` orchestrates building the executable and Nautilus extension, runs `glib-compile-schemas`, and installs desktop/metainfo files.
-   - The project assumes `valac`, `libadwaita-1`, `gtk4`, `gio-2.0`, `glib-2.0`, `libnautilus-extension-4`, and `p7zip-full` at runtime.
+   - The project assumes `valac`, `libadwaita-1`, `gtk4`, `gio-2.0`, `glib-2.0`, `json-glib-1.0`, `gee-0.8`, `libnautilus-extension-4`, and `p7zip-full` at runtime.
 
 ## Runtime Flow
 
@@ -33,11 +37,10 @@ AppManager is a Libadwaita + GTK4 Vala application that provides a rich, guided 
 3. `DropWindow` appears displaying the originating AppImage icon and the `~/Applications` folder badge. When the user drags from left to right (or hits Install), Installer kicks in.
 4. Installer chooses the correct flow (executable vs. non-executable) and performs: move/extract, `.desktop` rewrite, icon installation, registry update, and sends desktop notifications for success/failure.
 
-## Preferences Window Content
+## Main Window Content
 
-- Default install mode (auto-detect, force move, force extract).
-- Auto-clean temporary extraction folders toggle.
-- “Watch `~/Downloads` for AppImages” preview (future enhancement placeholder).
-- List of installed applications with buttons to launch, reveal in Files, or uninstall.
+- List of installed applications grouped by "Portable" and "Extracted".
+- Navigation to `DetailsWindow` for each app.
+- Settings integration (window size, etc.).
 
 This document should be kept in sync with future enhancements so contributors understand system boundaries quickly.
