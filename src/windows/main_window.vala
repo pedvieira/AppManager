@@ -93,13 +93,26 @@ namespace AppManager {
                 return;
             }
 
+            void apply_provider(Gdk.Display display) {
+                gtk_style_context_add_provider_for_display_compat(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
+            }
+
             var display = style_manager.get_display();
-            if (display == null) {
-                warning("Custom CSS could not be applied because the StyleManager has no display");
+            if (display != null) {
+                apply_provider(display);
                 return;
             }
 
-            gtk_style_context_add_provider_for_display_compat(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
+            // Wait for the StyleManager to gain a display before applying CSS to avoid startup warnings.
+            ulong handler_id = 0;
+            handler_id = style_manager.notify["display"].connect(() => {
+                var new_display = style_manager.get_display();
+                if (new_display == null) {
+                    return;
+                }
+                style_manager.disconnect(handler_id);
+                apply_provider(new_display);
+            });
         }
 
         private void build_ui() {

@@ -43,12 +43,14 @@ namespace AppManager.Core {
         private InstallationRegistry registry;
         private Installer installer;
         private Soup.Session session;
+        private string user_agent;
 
         public Updater(InstallationRegistry registry, Installer installer) {
             this.registry = registry;
             this.installer = installer;
             session = new Soup.Session();
-            session.user_agent = "AppManager/%s".printf(Core.APPLICATION_VERSION);
+            user_agent = "AppManager/%s".printf(Core.APPLICATION_VERSION);
+            session.user_agent = user_agent;
             session.timeout = 60;
         }
 
@@ -73,14 +75,14 @@ namespace AppManager.Core {
 
             record_checking(record);
 
-            var source = GithubSource.parse(update_url, record.version);
+            var source = resolve_update_source(update_url, record.version);
             if (source == null) {
                 record_skipped(record, UpdateSkipReason.UNSUPPORTED_SOURCE);
                 return new UpdateResult(record, UpdateStatus.SKIPPED, I18n.tr("Update source not supported"), null, UpdateSkipReason.UNSUPPORTED_SOURCE);
             }
 
             try {
-                var release = fetch_latest_release(source, cancellable);
+                var release = fetch_release_for_source(source, cancellable);
                 if (release == null) {
                     record_skipped(record, UpdateSkipReason.API_UNAVAILABLE);
                     return new UpdateResult(record, UpdateStatus.SKIPPED, I18n.tr("Unable to read releases"), null, UpdateSkipReason.API_UNAVAILABLE);
@@ -120,6 +122,20 @@ namespace AppManager.Core {
             }
         }
 
+        private ReleaseSource? resolve_update_source(string update_url, string? record_version) {
+            var github_source = GithubSource.parse(update_url, record_version);
+            if (github_source != null) {
+                return github_source;
+            }
+
+            var gitlab_source = GitlabSource.parse(update_url, record_version);
+            if (gitlab_source != null) {
+                return gitlab_source;
+            }
+
+            return null;
+        }
+
         private string? read_update_url(InstallationRecord record) {
             if (record.desktop_file == null || record.desktop_file.strip() == "") {
                 return null;
@@ -138,9 +154,26 @@ namespace AppManager.Core {
             return null;
         }
 
-        private GithubRelease? fetch_latest_release(GithubSource source, GLib.Cancellable? cancellable) throws Error {
+        private ReleaseInfo? fetch_release_for_source(ReleaseSource source, GLib.Cancellable? cancellable) throws Error {
+            if (source is GithubSource) {
+                var github_source = source as GithubSource;
+                if (github_source != null) {
+                    return fetch_latest_github_release(github_source, cancellable);
+                }
+            }
+            if (source is GitlabSource) {
+                var gitlab_source = source as GitlabSource;
+                if (gitlab_source != null) {
+                    return fetch_latest_gitlab_release(gitlab_source, cancellable);
+                }
+            }
+            return null;
+        }
+
+        private ReleaseInfo? fetch_latest_github_release(GithubSource source, GLib.Cancellable? cancellable) throws Error {
             var message = new Soup.Message("GET", source.api_url());
             message.request_headers.replace("Accept", "application/vnd.github+json");
+            message.request_headers.replace("User-Agent", user_agent);
             var bytes = session.send_and_read(message, cancellable);
             var status = message.get_status();
             if (status < 200 || status >= 300) {
@@ -160,7 +193,7 @@ namespace AppManager.Core {
                 tag_name = root.get_string_member("tag_name");
             }
 
-            var assets = new ArrayList<GithubAsset>();
+            var assets = new ArrayList<ReleaseAsset>();
             if (root.has_member("assets")) {
                 var assets_array = root.get_array_member("assets");
                 for (uint i = 0; i < assets_array.get_length(); i++) {
@@ -172,12 +205,96 @@ namespace AppManager.Core {
                     if (!asset_obj.has_member("name") || !asset_obj.has_member("browser_download_url")) {
                         continue;
                     }
-                    assets.add(new GithubAsset(asset_obj.get_string_member("name"), asset_obj.get_string_member("browser_download_url")));
+                    assets.add(new ReleaseAsset(asset_obj.get_string_member("name"), asset_obj.get_string_member("browser_download_url")));
                 }
             }
 
             var normalized = sanitize_version(tag_name);
-            return new GithubRelease(tag_name, normalized, assets);
+            return new ReleaseInfo(tag_name, normalized, assets);
+        }
+
+        private ReleaseInfo? fetch_latest_gitlab_release(GitlabSource source, GLib.Cancellable? cancellable) throws Error {
+            var message = new Soup.Message("GET", source.releases_api_url());
+            message.request_headers.replace("Accept", "application/json");
+            message.request_headers.replace("User-Agent", user_agent);
+            var bytes = session.send_and_read(message, cancellable);
+            var status = message.get_status();
+            if (status < 200 || status >= 300) {
+                throw new GLib.IOError.FAILED("GitLab API error (%u)".printf(status));
+            }
+
+            var parser = new Json.Parser();
+            var stream = new MemoryInputStream.from_bytes(bytes);
+            parser.load_from_stream(stream, cancellable);
+            var root = parser.get_root();
+            if (root == null) {
+                return null;
+            }
+
+            Json.Object? release_obj = null;
+            if (root.get_node_type() == Json.NodeType.OBJECT) {
+                release_obj = root.get_object();
+            } else if (root.get_node_type() == Json.NodeType.ARRAY) {
+                var array = root.get_array();
+                if (array.get_length() == 0) {
+                    return null;
+                }
+                var first = array.get_element(0);
+                if (first.get_node_type() == Json.NodeType.OBJECT) {
+                    release_obj = first.get_object();
+                }
+            }
+
+            if (release_obj == null) {
+                return null;
+            }
+
+            string? tag_name = null;
+            if (release_obj.has_member("tag_name")) {
+                tag_name = release_obj.get_string_member("tag_name");
+            }
+
+            string? fallback_name = null;
+            if (release_obj.has_member("name")) {
+                fallback_name = release_obj.get_string_member("name");
+            }
+
+            var assets = extract_gitlab_assets(release_obj);
+            var normalized = sanitize_version(tag_name ?? fallback_name);
+            return new ReleaseInfo(tag_name ?? fallback_name, normalized, assets);
+        }
+
+        private ArrayList<ReleaseAsset> extract_gitlab_assets(Json.Object release_obj) {
+            var assets = new ArrayList<ReleaseAsset>();
+            if (!release_obj.has_member("assets")) {
+                return assets;
+            }
+
+            var assets_obj = release_obj.get_object_member("assets");
+            if (assets_obj.has_member("links")) {
+                var links = assets_obj.get_array_member("links");
+                for (uint i = 0; i < links.get_length(); i++) {
+                    var node = links.get_element(i);
+                    if (node.get_node_type() != Json.NodeType.OBJECT) {
+                        continue;
+                    }
+                    var link_obj = node.get_object();
+                    string? download_url = null;
+                    if (link_obj.has_member("direct_asset_url")) {
+                        download_url = link_obj.get_string_member("direct_asset_url");
+                    }
+                    if ((download_url == null || download_url == "") && link_obj.has_member("url")) {
+                        download_url = link_obj.get_string_member("url");
+                    }
+                    if (download_url == null || download_url.strip() == "") {
+                        continue;
+                    }
+                    var filename = derive_filename(download_url);
+                    assets.add(new ReleaseAsset(filename, download_url));
+                }
+            }
+
+            return assets;
         }
 
         private DownloadArtifact download_asset(string url, GLib.Cancellable? cancellable) throws Error {
@@ -188,6 +305,7 @@ namespace AppManager.Core {
             try {
                 var message = new Soup.Message("GET", url);
                 message.request_headers.replace("Accept", "application/octet-stream");
+                message.request_headers.replace("User-Agent", user_agent);
                 var input = session.send(message, cancellable);
                 var status = message.get_status();
                 if (status < 200 || status >= 300) {
@@ -321,12 +439,12 @@ namespace AppManager.Core {
             if (preferred != null) {
                 var idx = text.index_of(preferred);
                 if (idx >= 0) {
-                    return text.substring(idx, idx + preferred.length);
+                    return text.substring(idx, preferred.length);
                 }
                 var alt = "v" + preferred;
                 idx = text.index_of(alt);
                 if (idx >= 0) {
-                    return text.substring(idx, idx + alt.length);
+                    return text.substring(idx, alt.length);
                 }
             }
             try {
@@ -341,20 +459,54 @@ namespace AppManager.Core {
             return null;
         }
 
-        private class GithubSource : Object {
+        private abstract class ReleaseSource : Object {
+            public string? current_version { get; protected set; }
+            protected string asset_prefix;
+            protected string asset_suffix;
+
+            protected ReleaseSource(string asset_prefix, string asset_suffix, string? current_version) {
+                Object();
+                this.asset_prefix = asset_prefix ?? "";
+                this.asset_suffix = asset_suffix ?? "";
+                this.current_version = current_version;
+            }
+
+            public ReleaseAsset? select_asset(ArrayList<ReleaseAsset> assets) {
+                ReleaseAsset? fallback = null;
+                int appimage_candidates = 0;
+                foreach (var asset in assets) {
+                    if (!asset.name.down().has_suffix(".appimage")) {
+                        continue;
+                    }
+                    appimage_candidates++;
+                    if (matches_asset(asset.name)) {
+                        return asset;
+                    }
+                    if (fallback == null) {
+                        fallback = asset;
+                    }
+                }
+                if (appimage_candidates == 1 && fallback != null) {
+                    return fallback;
+                }
+                return null;
+            }
+
+            private bool matches_asset(string candidate) {
+                bool prefix_ok = asset_prefix == "" || candidate.has_prefix(asset_prefix);
+                bool suffix_ok = asset_suffix == "" || candidate.has_suffix(asset_suffix);
+                return prefix_ok && suffix_ok;
+            }
+        }
+
+        private class GithubSource : ReleaseSource {
             public string owner { get; private set; }
             public string repo { get; private set; }
-            public string? current_version { get; private set; }
-            private string asset_prefix;
-            private string asset_suffix;
 
             private GithubSource(string owner, string repo, string asset_prefix, string asset_suffix, string? current_version) {
-                Object();
+                base(asset_prefix, asset_suffix, current_version);
                 this.owner = owner;
                 this.repo = repo;
-                this.asset_prefix = asset_prefix;
-                this.asset_suffix = asset_suffix;
-                this.current_version = current_version;
             }
 
             public static GithubSource? parse(string url, string? record_version) {
@@ -391,35 +543,151 @@ namespace AppManager.Core {
                 }
             }
 
-            public GithubAsset? select_asset(ArrayList<GithubAsset> assets) {
-                GithubAsset? fallback = null;
-                int appimage_candidates = 0;
-                foreach (var asset in assets) {
-                    if (!asset.name.down().has_suffix(".appimage")) {
-                        continue;
-                    }
-                    appimage_candidates++;
-                    if (matches_asset(asset.name)) {
-                        return asset;
-                    }
-                    if (fallback == null) {
-                        fallback = asset;
-                    }
-                }
-                if (appimage_candidates == 1 && fallback != null) {
-                    return fallback;
-                }
-                return null;
-            }
-
-            private bool matches_asset(string candidate) {
-                bool prefix_ok = asset_prefix == "" || candidate.has_prefix(asset_prefix);
-                bool suffix_ok = asset_suffix == "" || candidate.has_suffix(asset_suffix);
-                return prefix_ok && suffix_ok;
-            }
-
             public string api_url() {
                 return "https://api.github.com/repos/%s/%s/releases/latest".printf(owner, repo);
+            }
+        }
+
+        private class GitlabSource : ReleaseSource {
+            private string scheme;
+            private string host;
+            private int port;
+            private string project_path;
+
+            private GitlabSource(string scheme, string host, int port, string project_path, string asset_prefix, string asset_suffix, string? current_version) {
+                base(asset_prefix, asset_suffix, current_version);
+                this.scheme = scheme;
+                this.host = host;
+                this.port = port;
+                this.project_path = project_path;
+            }
+
+            public static GitlabSource? parse(string url, string? record_version) {
+                try {
+                    var uri = GLib.Uri.parse(url, GLib.UriFlags.NONE);
+                    var host = uri.get_host();
+                    var path = uri.get_path();
+                    if (host == null || path == null) {
+                        return null;
+                    }
+                    var segments = tokenize_path(path);
+                    if (segments.length < 4) {
+                        return null;
+                    }
+
+                    int split_index = -1;
+                    for (int i = 0; i < segments.length; i++) {
+                        if (segments[i] == "-") {
+                            split_index = i;
+                            break;
+                        }
+                    }
+                    if (split_index <= 0) {
+                        return null;
+                    }
+                    var action = segments[split_index + 1];
+                    if (action != "jobs" && action != "releases") {
+                        return null;
+                    }
+
+                    if (action == "jobs") {
+                        if (segments.length < split_index + 5) {
+                            return null;
+                        }
+                        bool saw_artifacts = false;
+                        int raw_index = -1;
+                        for (int i = split_index + 2; i < segments.length; i++) {
+                            if (segments[i] == "artifacts") {
+                                saw_artifacts = true;
+                            }
+                            if (segments[i] == "raw" || segments[i] == "download") {
+                                raw_index = i;
+                                break;
+                            }
+                        }
+                        if (!saw_artifacts || raw_index < 0 || raw_index + 1 >= segments.length) {
+                            return null;
+                        }
+                    } else if (action == "releases") {
+                        if (segments.length < split_index + 4) {
+                            return null;
+                        }
+                        int downloads_index = -1;
+                        for (int i = split_index + 1; i < segments.length; i++) {
+                            if (segments[i] == "downloads") {
+                                downloads_index = i;
+                                break;
+                            }
+                        }
+                        if (downloads_index < 0 || downloads_index + 1 >= segments.length) {
+                            return null;
+                        }
+                        // ensure we actually have "downloads/<filename>"
+                        if (downloads_index == segments.length - 1) {
+                            return null;
+                        }
+                    }
+
+                    var asset_segment = segments[segments.length - 1];
+                    var decoded = GLib.Uri.unescape_string(asset_segment);
+                    if (decoded != null && decoded.strip() != "") {
+                        asset_segment = decoded;
+                    }
+
+                    var project_builder = new StringBuilder();
+                    for (int i = 0; i < split_index; i++) {
+                        if (i > 0) {
+                            project_builder.append_c('/');
+                        }
+                        project_builder.append(segments[i]);
+                    }
+                    var project_path = project_builder.str;
+                    if (project_path == null || project_path.strip() == "") {
+                        return null;
+                    }
+
+                    string? tag_segment = null;
+                    if (action == "releases") {
+                        for (int i = split_index + 2; i < segments.length; i++) {
+                            var value = segments[i];
+                            if (value == "downloads") {
+                                break;
+                            }
+                            if (value == "permalink" || value == "latest") {
+                                continue;
+                            }
+                            tag_segment = value;
+                            break;
+                        }
+                    }
+
+                    var token = find_version_token(asset_segment, record_version) ?? find_version_token(tag_segment ?? "", record_version);
+                    var prefix = derive_prefix(asset_segment, token);
+                    var suffix = derive_suffix(asset_segment, token);
+                    var inferred = sanitize_version(record_version) ?? sanitize_version(tag_segment) ?? sanitize_version(token);
+                    var scheme = uri.get_scheme() ?? "https";
+                    var port = uri.get_port();
+                    return new GitlabSource(scheme, host, port, project_path, prefix, suffix, inferred);
+                } catch (Error e) {
+                    warning("Failed to parse GitLab update URL %s: %s", url, e.message);
+                    return null;
+                }
+            }
+
+            public string releases_api_url() {
+                var builder = new StringBuilder();
+                builder.append(scheme);
+                builder.append("://");
+                builder.append(host);
+                if (port > 0 && !((scheme == "https" && port == 443) || (scheme == "http" && port == 80))) {
+                    builder.append(":");
+                    builder.append("%d".printf(port));
+                }
+                var encoded_project = GLib.Uri.escape_string(project_path, null, true);
+                builder.append("/api/v4/projects/");
+                builder.append(encoded_project);
+                builder.append("/releases?per_page=20&order_by=released_at&sort=desc");
+                return builder.str;
             }
         }
 
@@ -445,23 +713,23 @@ namespace AppManager.Core {
             return text.substring(idx + token.length);
         }
 
-        private class GithubAsset : Object {
+        private class ReleaseAsset : Object {
             public string name { get; private set; }
             public string download_url { get; private set; }
 
-            public GithubAsset(string name, string download_url) {
+            public ReleaseAsset(string name, string download_url) {
                 Object();
                 this.name = name;
                 this.download_url = download_url;
             }
         }
 
-        private class GithubRelease : Object {
+        private class ReleaseInfo : Object {
             public string? tag_name { get; private set; }
             public string? normalized_version { get; private set; }
-            public ArrayList<GithubAsset> assets { get; private set; }
+            public ArrayList<ReleaseAsset> assets { get; private set; }
 
-            public GithubRelease(string? tag_name, string? normalized_version, ArrayList<GithubAsset> assets) {
+            public ReleaseInfo(string? tag_name, string? normalized_version, ArrayList<ReleaseAsset> assets) {
                 Object();
                 this.tag_name = tag_name;
                 this.normalized_version = normalized_version;
