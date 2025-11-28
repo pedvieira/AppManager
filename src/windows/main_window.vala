@@ -76,13 +76,8 @@ namespace AppManager {
                     color: #ffffff;
                 }
                 .update-success-badge {
-                    background-color: @accent_bg_color;
-                    color: @accent_fg_color;
-                    border-radius: 9999px;
-                    padding: 1px;
-                }
-                .update-success-badge image {
-                    color: @accent_fg_color;
+                    min-width: 18px;
+                    min-height: 18px;
                 }
             """;
             provider.load_from_string(css);
@@ -573,17 +568,7 @@ namespace AppManager {
                 warning.add_css_class("error");
                 stack.add_named(warning, "failed");
 
-                var success_image = new Gtk.Image.from_icon_name("emblem-ok-symbolic");
-                success_image.set_pixel_size(12);
-                success_image.add_css_class("update-success-icon");
-
-                var success_container = new Gtk.CenterBox();
-                success_container.set_size_request(18, 18);
-                success_container.set_halign(Gtk.Align.CENTER);
-                success_container.set_valign(Gtk.Align.CENTER);
-                success_container.add_css_class("update-success-badge");
-                success_container.set_center_widget(success_image);
-                success_badge = success_container;
+                success_badge = new SuccessBadge();
                 stack.add_named(success_badge, "success");
 
                 if (!has_update) {
@@ -633,7 +618,51 @@ namespace AppManager {
             }
         }
 
-        private class CircularProgress : Gtk.DrawingArea {
+            private class SuccessBadge : Gtk.DrawingArea {
+                public SuccessBadge() {
+                    set_content_width(18);
+                    set_content_height(18);
+                    add_css_class("update-success-badge");
+                    set_draw_func(draw_badge);
+                }
+
+                private void draw_badge(Gtk.DrawingArea area, Cairo.Context cr, int width, int height) {
+                    var context = area.get_style_context();
+                    Gdk.RGBA accent_bg;
+                    Gdk.RGBA accent_fg;
+                    if (!context.lookup_color("accent_bg_color", out accent_bg)) {
+                        accent_bg = Gdk.RGBA();
+                        accent_bg.parse("#3584e4");
+                    }
+                    if (!context.lookup_color("accent_fg_color", out accent_fg)) {
+                        accent_fg = Gdk.RGBA();
+                        accent_fg.parse("#ffffff");
+                    }
+
+                    double radius = ((width < height) ? width : height) / 2.0 - 0.5;
+                    double cx = width / 2.0;
+                    double cy = height / 2.0;
+
+                    cr.save();
+                    cr.arc(cx, cy, radius, 0, GLib.Math.PI * 2);
+                    cr.set_source_rgba(accent_bg.red, accent_bg.green, accent_bg.blue, accent_bg.alpha);
+                    cr.fill();
+                    cr.restore();
+
+                    cr.save();
+                    cr.set_line_width(1.7 * (width / 18.0));
+                    cr.set_line_cap(Cairo.LineCap.ROUND);
+                    cr.set_line_join(Cairo.LineJoin.ROUND);
+                    cr.set_source_rgba(accent_fg.red, accent_fg.green, accent_fg.blue, accent_fg.alpha);
+                    cr.move_to(width * 0.32, height * 0.55);
+                    cr.line_to(width * 0.47, height * 0.72);
+                    cr.line_to(width * 0.74, height * 0.32);
+                    cr.stroke();
+                    cr.restore();
+                }
+            }
+
+            private class CircularProgress : Gtk.DrawingArea {
             private uint tick_id = 0;
             private double angle = 0;
 
