@@ -79,6 +79,10 @@ namespace AppManager {
                     min-width: 18px;
                     min-height: 18px;
                 }
+                .extracted-app .title > label {
+                    color: @accent_color;
+                    font-weight: bold;
+                }
             """;
             provider.load_from_string(css);
 
@@ -256,6 +260,9 @@ namespace AppManager {
             foreach (var record in records) {
                 var row = new Adw.ActionRow();
                 row.title = record.name;
+                if (record.mode == InstallMode.EXTRACTED) {
+                    row.add_css_class("extracted-app");
+                }
                 
                 string version_text;
                 if (record.version != null && record.version.strip() != "") {
@@ -627,17 +634,8 @@ namespace AppManager {
                 }
 
                 private void draw_badge(Gtk.DrawingArea area, Cairo.Context cr, int width, int height) {
-                    var context = area.get_style_context();
-                    Gdk.RGBA accent_bg;
-                    Gdk.RGBA accent_fg;
-                    if (!context.lookup_color("accent_bg_color", out accent_bg)) {
-                        accent_bg = Gdk.RGBA();
-                        accent_bg.parse("#3584e4");
-                    }
-                    if (!context.lookup_color("accent_fg_color", out accent_fg)) {
-                        accent_fg = Gdk.RGBA();
-                        accent_fg.parse("#ffffff");
-                    }
+                    var accent_bg = resolve_accent_background();
+                    var accent_fg = resolve_accent_foreground(accent_bg);
 
                     double radius = ((width < height) ? width : height) / 2.0 - 0.5;
                     double cx = width / 2.0;
@@ -659,6 +657,47 @@ namespace AppManager {
                     cr.line_to(width * 0.74, height * 0.32);
                     cr.stroke();
                     cr.restore();
+                }
+
+                private Gdk.RGBA resolve_accent_background() {
+                    var fallback = parse_color("#3584e4");
+                    var style_manager = Adw.StyleManager.get_default();
+                    if (style_manager == null) {
+                        return fallback;
+                    }
+
+                    var accent_rgba = style_manager.get_accent_color_rgba();
+                    if (accent_rgba != null) {
+                        return accent_rgba;
+                    }
+
+                    return style_manager.get_accent_color().to_rgba();
+                }
+
+                private Gdk.RGBA resolve_accent_foreground(Gdk.RGBA accent_bg) {
+                    var style_manager = Adw.StyleManager.get_default();
+                    if (style_manager != null) {
+                        // Prefer a lighter stroke when the accent sits on a dark surface.
+                        if (style_manager.get_dark()) {
+                            return parse_color("#f6f5f4");
+                        }
+                    }
+
+                    double luminance = relative_luminance(accent_bg);
+                    if (luminance > 0.6) {
+                        return parse_color("#241f31");
+                    }
+                    return parse_color("#ffffff");
+                }
+
+                private double relative_luminance(Gdk.RGBA color) {
+                    return 0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue;
+                }
+
+                private Gdk.RGBA parse_color(string value) {
+                    var color = Gdk.RGBA();
+                    color.parse(value);
+                    return color;
                 }
             }
 
