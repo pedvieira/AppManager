@@ -76,12 +76,8 @@ namespace AppManager.Core {
 
         private void install_portable(AppImageMetadata metadata, InstallationRecord record, HashTable<string, string>? preserved_props) throws Error {
             progress("Preparing Applications folder…");
-            var dest_path = Utils.FileUtils.unique_path(Path.build_filename(AppPaths.applications_dir, metadata.basename));
-            var dest = File.new_for_path(dest_path);
-            metadata.file.copy(dest, FileCopyFlags.OVERWRITE, null, null);
-            ensure_executable(dest_path);
-            record.installed_path = dest_path;
-            finalize_desktop_and_icon(record, metadata, dest_path, dest_path, preserved_props);
+            record.installed_path = metadata.path;
+            finalize_desktop_and_icon(record, metadata, metadata.path, metadata.path, preserved_props);
         }
 
         private string? parse_bin_from_apprun(string apprun_path) {
@@ -206,20 +202,14 @@ namespace AppManager.Core {
                 string? desktop_version = null;
                 bool is_terminal_app = false;
                 try {
-                    var key_file = new KeyFile();
-                    key_file.load_from_file(desktop_path, KeyFileFlags.NONE);
-                    if (key_file.has_key("Desktop Entry", "Name")) {
-                        desktop_name = key_file.get_string("Desktop Entry", "Name");
+                    var desktop_info = AppImageAssets.parse_desktop_file(desktop_path);
+                    if (desktop_info.name != null && desktop_info.name.strip() != "") {
+                        desktop_name = desktop_info.name.strip();
                     }
-                    if (key_file.has_key("Desktop Entry", "X-AppImage-Version")) {
-                        var parsed_version = key_file.get_string("Desktop Entry", "X-AppImage-Version").strip();
-                        if (parsed_version.length > 0) {
-                            desktop_version = parsed_version;
-                        }
+                    if (desktop_info.version != null) {
+                        desktop_version = desktop_info.version;
                     }
-                    if (key_file.has_key("Desktop Entry", "Terminal")) {
-                        is_terminal_app = key_file.get_boolean("Desktop Entry", "Terminal");
-                    }
+                    is_terminal_app = desktop_info.is_terminal;
                 } catch (Error e) {
                     warning("Failed to parse desktop metadata: %s", e.message);
                 }
@@ -231,9 +221,23 @@ namespace AppManager.Core {
                     slug = metadata.sanitized_basename().down();
                 }
 
-                var renamed_path = ensure_install_name(record.installed_path, slug, record.mode == InstallMode.EXTRACTED);
+                var rename_for_extracted = record.mode == InstallMode.EXTRACTED;
+                string renamed_path;
+                if (rename_for_extracted) {
+                    renamed_path = ensure_install_name(record.installed_path, slug, true);
+                } else {
+                    var app_name = desktop_name.strip()
+                        .replace("/", " ")
+                        .replace("\\", " ")
+                        .replace("\n", " ")
+                        .replace("\r", " ");
+                    if (app_name == "") {
+                        app_name = slug;
+                    }
+                    renamed_path = move_portable_to_applications(record.installed_path, app_name);
+                }
                 if (renamed_path != record.installed_path) {
-                    if (record.mode == InstallMode.EXTRACTED) {
+                    if (rename_for_extracted) {
                         var exec_basename = Path.get_basename(exec_path);
                         exec_path = Path.build_filename(renamed_path, exec_basename);
                     } else {
@@ -243,7 +247,15 @@ namespace AppManager.Core {
                     record.installed_path = renamed_path;
                 }
 
-                var final_slug = derive_slug_from_path(record.installed_path, record.mode == InstallMode.EXTRACTED);
+                string final_slug;
+                if (rename_for_extracted) {
+                    final_slug = derive_slug_from_path(record.installed_path, true);
+                } else {
+                    final_slug = slugify_app_name(Path.get_basename(record.installed_path));
+                    if (final_slug == "") {
+                        final_slug = slug;
+                    }
+                }
                 
                 // Extract original Icon name from desktop file
                 string? original_icon_name = null;
@@ -449,7 +461,7 @@ namespace AppManager.Core {
                     var exec_value = trimmed.substring("Exec=".length).strip();
                     var parts = exec_value.split(" ", 2);
                     string args = (parts.length > 1) ? " " + parts[1] : "";
-                    output_lines.add("Exec=%s%s".printf(exec_target, args));
+                    output_lines.add("Exec=\"%s\"%s".printf(exec_target, args));
                     continue;
                 }
 
@@ -753,6 +765,17 @@ namespace AppManager.Core {
             var dest = File.new_for_path(final_target);
             source.move(dest, FileCopyFlags.NONE, null, null);
             return final_target;
+        }
+
+        private string move_portable_to_applications(string source_path, string app_name) throws Error {
+            DirUtils.create_with_parents(AppPaths.applications_dir, 0755);
+            var desired = Path.build_filename(AppPaths.applications_dir, app_name);
+            var final_path = Utils.FileUtils.unique_path(desired);
+            var source = File.new_for_path(source_path);
+            var dest = File.new_for_path(final_path);
+            source.move(dest, FileCopyFlags.NONE, null, null);
+            ensure_executable(final_path);
+            return final_path;
         }
 
         private string get_path_extension(string path) {

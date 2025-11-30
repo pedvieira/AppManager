@@ -760,22 +760,14 @@ namespace AppManager {
             try {
                 var desktop_file = AppImageAssets.extract_desktop_entry(appimage_path, temp_dir);
                 if (desktop_file != null) {
-                    var key_file = new KeyFile();
-                    key_file.load_from_file(desktop_file, KeyFileFlags.NONE);
-                    if (key_file.has_group("Desktop Entry")) {
-                        if (key_file.has_key("Desktop Entry", "Name")) {
-                            resolved = key_file.get_string("Desktop Entry", "Name");
-                        }
-                        if (key_file.has_key("Desktop Entry", "X-AppImage-Version")) {
-                            var candidate = key_file.get_string("Desktop Entry", "X-AppImage-Version").strip();
-                            if (candidate.length > 0) {
-                                resolved_app_version = candidate;
-                            }
-                        }
-                        if (key_file.has_key("Desktop Entry", "Terminal")) {
-                            is_terminal_app = key_file.get_boolean("Desktop Entry", "Terminal");
-                        }
+                    var desktop_info = AppImageAssets.parse_desktop_file(desktop_file);
+                    if (desktop_info.name != null && desktop_info.name.strip() != "") {
+                        resolved = desktop_info.name.strip();
                     }
+                    if (desktop_info.version != null) {
+                        resolved_app_version = desktop_info.version;
+                    }
+                    is_terminal_app = desktop_info.is_terminal;
                 }
             } catch (Error e) {
                 warning("Desktop file extraction error: %s", e.message);
@@ -887,6 +879,7 @@ namespace AppManager {
             label = new Gtk.Label(text);
             label.halign = Gtk.Align.CENTER;
             label.wrap = true;
+            label.max_width_chars = 15;
             var attrs = new Pango.AttrList();
             attrs.insert(Pango.attr_weight_new(Pango.Weight.BOLD));
             label.set_attributes(attrs);

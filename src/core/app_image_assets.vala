@@ -10,9 +10,38 @@ namespace AppManager.Core {
         EXTRACTION_FAILED
     }
 
+    public class DesktopEntryMetadata : Object {
+        public string? name { get; set; }
+        public string? version { get; set; }
+        public bool is_terminal { get; set; }
+
+        public DesktopEntryMetadata() {
+            is_terminal = false;
+        }
+    }
+
     public class AppImageAssets : Object {
         private const string DIRICON_NAME = ".DirIcon";
         private const int MAX_SYMLINK_ITERATIONS = 5;
+
+        public static DesktopEntryMetadata parse_desktop_file(string desktop_path) throws Error {
+            var metadata = new DesktopEntryMetadata();
+            var key_file = new KeyFile();
+            key_file.load_from_file(desktop_path, KeyFileFlags.NONE);
+            if (key_file.has_key("Desktop Entry", "Name")) {
+                metadata.name = key_file.get_string("Desktop Entry", "Name");
+            }
+            if (key_file.has_key("Desktop Entry", "X-AppImage-Version")) {
+                var version = key_file.get_string("Desktop Entry", "X-AppImage-Version").strip();
+                if (version.length > 0) {
+                    metadata.version = version;
+                }
+            }
+            if (key_file.has_key("Desktop Entry", "Terminal")) {
+                metadata.is_terminal = key_file.get_boolean("Desktop Entry", "Terminal");
+            }
+            return metadata;
+        }
 
         public static string extract_desktop_entry(string appimage_path, string temp_root) throws Error {
             var desktop_root = Path.build_filename(temp_root, "desktop");
