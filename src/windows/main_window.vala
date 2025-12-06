@@ -16,6 +16,7 @@ namespace AppManager {
         private Updater updater;
         private Adw.PreferencesGroup apps_group;
         private Adw.PreferencesPage general_page;
+        private Gee.ArrayList<Adw.PreferencesRow> app_rows;
         private Gtk.ShortcutsWindow? shortcuts_window;
         private Adw.AboutDialog? about_dialog;
         private Adw.NavigationView navigation_view;
@@ -48,6 +49,7 @@ namespace AppManager {
             this.record_size_cache = new Gee.HashMap<string, string>();
             this.updating_records = new Gee.HashSet<string>();
             this.active_details_window = null;
+            this.app_rows = new Gee.ArrayList<Adw.PreferencesRow>();
             add_css_class("devel");
             this.set_default_size(settings.get_int("window-width"), settings.get_int("window-height"));
             load_custom_css();
@@ -148,11 +150,32 @@ namespace AppManager {
             toast_overlay.add_toast(toast);
         }
 
-        private void refresh_installations() {
-            general_page.remove(apps_group);
+        private void ensure_apps_group_present() {
+            if (apps_group == null) {
+                apps_group = new Adw.PreferencesGroup();
+                apps_group.title = I18n.tr("My Apps");
+            }
+            if (apps_group.get_parent() == null) {
+                general_page.add(apps_group);
+            }
+        }
 
-            apps_group = new Adw.PreferencesGroup();
-            general_page.add(apps_group);
+        private void clear_apps_group_rows() {
+            if (apps_group == null) {
+                return;
+            }
+
+            foreach (var row in app_rows) {
+                if (row.get_parent() != null) {
+                    apps_group.remove(row);
+                }
+            }
+            app_rows.clear();
+        }
+
+        private void refresh_installations() {
+            ensure_apps_group_present();
+            clear_apps_group_rows();
             
             var all_records = registry.list();
             var filtered_list = new Gee.ArrayList<InstallationRecord>();
@@ -286,14 +309,15 @@ namespace AppManager {
 
                 var state_key = record_state_key(record);
                 if (pending_update_keys.contains(state_key)) {
-                    var update_button = create_update_button(record, state_key);
-                    suffix_box.append(update_button);
+                    var update_widget = create_update_widget(record, state_key);
+                    suffix_box.append(update_widget);
                 }
 
                 suffix_box.append(arrow);
                 row.add_suffix(suffix_box);
 
                 group.add(row);
+                app_rows.add(row);
             }
         }
 
@@ -383,18 +407,29 @@ namespace AppManager {
             return I18n.tr("Updated %d days ago").printf(days);
         }
 
-        private Gtk.Widget create_update_button(InstallationRecord record, string state_key) {
+        private Gtk.Widget create_update_widget(InstallationRecord record, string state_key) {
             bool is_updating = updating_records.contains(state_key);
-            var label = is_updating ? I18n.tr("Updating...") : I18n.tr("Update");
-            var button = new Gtk.Button.with_label(label);
-            button.add_css_class("suggested-action");
             if (is_updating) {
-                button.set_sensitive(false);
-            } else {
-                button.clicked.connect(() => {
-                    trigger_single_update(record);
-                });
+                var box = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 6);
+                box.set_valign(Gtk.Align.CENTER);
+
+                var spinner = new Gtk.Spinner();
+                spinner.start();
+                box.append(spinner);
+
+                var label = new Gtk.Label(I18n.tr("Updating"));
+                label.add_css_class("dim-label");
+                label.set_valign(Gtk.Align.CENTER);
+                box.append(label);
+
+                return box;
             }
+
+            var button = new Gtk.Button.with_label(I18n.tr("Update"));
+            button.add_css_class("suggested-action");
+            button.clicked.connect(() => {
+                trigger_single_update(record);
+            });
             return button;
         }
 
@@ -540,6 +575,8 @@ namespace AppManager {
                 return;
             }
 
+            mark_pending_updates_as_in_progress();
+            refresh_installations();
             set_update_button_state(UpdateWorkflowState.UPDATING);
             new Thread<void>("appmgr-update", () => {
                 var results = updater.update_all();
@@ -549,6 +586,12 @@ namespace AppManager {
                     return GLib.Source.REMOVE;
                 });
             });
+        }
+
+        private void mark_pending_updates_as_in_progress() {
+            foreach (var key in pending_update_keys) {
+                updating_records.add(key);
+            }
         }
 
         private void trigger_single_update(InstallationRecord record) {
@@ -588,11 +631,14 @@ namespace AppManager {
             var remaining = new Gee.HashSet<string>();
             foreach (var result in results) {
                 var key = record_state_key(result.record);
+                updating_records.remove(key);
                 if (!pending_update_keys.contains(key)) {
                     continue;
                 }
                 if (result.status != UpdateStatus.UPDATED) {
                     remaining.add(key);
+                } else {
+                    record_size_cache.unset(result.record.id);
                 }
                 sync_details_window_state(result.record);
             }
