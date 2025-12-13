@@ -1,0 +1,11 @@
+appimage-thumbnailer
+*.AppImage
+*.appimage
+*.AppImage.zsync
+*.appimage.zsync
+appimage-builder/
+appimagekit/
+appimaged/
+appimagetool/
+squashfs-root/
+squashfs-*.img
