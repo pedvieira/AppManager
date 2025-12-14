@@ -10,6 +10,7 @@ namespace AppManager {
         private Installer installer;
         private Settings settings;
         private BackgroundUpdateService? bg_update_service;
+        private DirectoryMonitor? directory_monitor;
         private PreferencesWindow? preferences_window;
         private static bool opt_version = false;
         private static bool opt_help = false;
@@ -76,6 +77,18 @@ Examples:
         protected override void startup() {
             base.startup();
             bg_update_service = new BackgroundUpdateService(settings, registry, installer);
+            
+            // Initialize directory monitoring for manual deletions
+            directory_monitor = new DirectoryMonitor(registry);
+            directory_monitor.changes_detected.connect(() => {
+                // Reconcile registry with filesystem when changes are detected
+                var orphaned = registry.reconcile_with_filesystem();
+                if (orphaned.size > 0) {
+                    debug("Reconciled %d orphaned installation(s)", orphaned.size);
+                }
+            });
+            directory_monitor.start();
+            
             var quit_action = new GLib.SimpleAction("quit", null);
             quit_action.activate.connect(() => this.quit());
             this.add_action(quit_action);
@@ -215,10 +228,7 @@ Examples:
                         return 3;
                     }
                     
-                    var icon = load_record_icon(record);
                     installer.uninstall(record);
-                    
-                    present_uninstall_notification(record, icon);
 
                     command_line.print("Removed %s\n", record.name);
                     return 0;
@@ -246,14 +256,11 @@ Examples:
 
         public void uninstall_record(InstallationRecord record, Gtk.Window? parent_window) {
             new Thread<void>("appmgr-uninstall", () => {
-                var icon = load_record_icon(record);
                 try {
                     installer.uninstall(record);
                     Idle.add(() => {
                         if (parent_window != null && parent_window is MainWindow) {
                             ((MainWindow)parent_window).add_toast(I18n.tr("Moved to Trash"));
-                        } else {
-                            present_uninstall_notification(record, icon);
                         }
                         return GLib.Source.REMOVE;
                     });
@@ -339,19 +346,6 @@ Examples:
             dialog.present(parent_window ?? main_window);
         }
 
-        private Icon? load_record_icon(InstallationRecord record) {
-            if (record.icon_path != null && File.new_for_path(record.icon_path).query_exists()) {
-                try {
-                    var file = File.new_for_path(record.icon_path);
-                    var bytes = file.load_bytes(null);
-                    return new BytesIcon(bytes);
-                } catch (Error e) {
-                    warning("Failed to load icon for notification: %s", e.message);
-                }
-            }
-            return null;
-        }
-
         private GLib.File[] to_file_array(ArrayList<GLib.File> files) {
             var result = new GLib.File[files.size];
             for (int i = 0; i < files.size; i++) {
@@ -377,26 +371,6 @@ Examples:
                 warning("Failed to compute checksum for %s: %s", target, e.message);
             }
             return null;
-        }
-
-        private void present_uninstall_notification(InstallationRecord record, Icon? icon = null) {
-            var notification = new Notification(record.name);
-            notification.set_body(I18n.tr("Moved to Trash"));
-            notification.set_priority(NotificationPriority.URGENT);
-            
-            if (icon != null) {
-                notification.set_icon(icon);
-            }
-            
-            var notification_id = "app-uninstall-%s".printf(record.id);
-            this.send_notification(notification_id, notification);
-            
-            this.hold();
-            GLib.Timeout.add(5000, () => {
-                this.withdraw_notification(notification_id);
-                this.release();
-                return GLib.Source.REMOVE;
-            });
         }
 
         private void present_preferences() {

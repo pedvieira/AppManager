@@ -42,6 +42,7 @@ core_sources = files(
   'src/core/app_paths.vala',
   'src/core/installation_record.vala',
   'src/core/installation_registry.vala',
+  'src/core/directory_monitor.vala',
   'src/core/app_image_metadata.vala',
   'src/core/app_image_assets.vala',
   'src/core/installer.vala',

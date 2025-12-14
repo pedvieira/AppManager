@@ -64,7 +64,9 @@ namespace AppManager.Core {
                     File.new_for_path(file_path).delete();
                 }
 
+                debug("Installer: calling registry.register() for %s", record.name);
                 registry.register(record);
+                debug("Installer: registry.register() completed");
                 return record;
             } catch (Error e) {
                 // Cleanup on failure

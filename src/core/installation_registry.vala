@@ -70,6 +70,74 @@ namespace AppManager.Core {
             }
         }
 
+        /**
+         * Reconciles the registry with the filesystem.
+         * Removes registry entries for apps that no longer exist on disk
+         * and cleans up their desktop files, icons, and symlinks.
+         * Returns the list of orphaned records that were cleaned up.
+         */
+        public Gee.ArrayList<InstallationRecord> reconcile_with_filesystem() {
+            var orphaned = new Gee.ArrayList<InstallationRecord>();
+            var records_to_remove = new Gee.ArrayList<string>();
+            
+            foreach (var record in records.get_values()) {
+                var installed_file = File.new_for_path(record.installed_path);
+                if (!installed_file.query_exists()) {
+                    debug("Found orphaned record: %s (path: %s)", record.name, record.installed_path);
+                    orphaned.add(record);
+                    records_to_remove.add(record.id);
+                    
+                    // Clean up associated files
+                    cleanup_record_files(record);
+                }
+            }
+            
+            // Remove orphaned records from registry
+            foreach (var id in records_to_remove) {
+                records.remove(id);
+            }
+            
+            if (records_to_remove.size > 0) {
+                save();
+                notify_changed();
+            }
+            
+            return orphaned;
+        }
+
+        private void cleanup_record_files(InstallationRecord record) {
+            try {
+                // Clean up desktop file
+                if (record.desktop_file != null) {
+                    var desktop_file = File.new_for_path(record.desktop_file);
+                    if (desktop_file.query_exists()) {
+                        desktop_file.delete(null);
+                        debug("Cleaned up desktop file: %s", record.desktop_file);
+                    }
+                }
+                
+                // Clean up icon
+                if (record.icon_path != null) {
+                    var icon_file = File.new_for_path(record.icon_path);
+                    if (icon_file.query_exists()) {
+                        icon_file.delete(null);
+                        debug("Cleaned up icon: %s", record.icon_path);
+                    }
+                }
+                
+                // Clean up bin symlink
+                if (record.bin_symlink != null) {
+                    var symlink_file = File.new_for_path(record.bin_symlink);
+                    if (symlink_file.query_exists()) {
+                        symlink_file.delete(null);
+                        debug("Cleaned up bin symlink: %s", record.bin_symlink);
+                    }
+                }
+            } catch (Error e) {
+                warning("Failed to cleanup files for orphaned record %s: %s", record.name, e.message);
+            }
+        }
+
         private void load() {
             if (!registry_file.query_exists(null)) {
                 return;

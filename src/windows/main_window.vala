@@ -45,6 +45,7 @@ namespace AppManager {
 
         public MainWindow(Application app, InstallationRegistry registry, Installer installer, Settings settings) {
             Object(application: app);
+            debug("MainWindow: constructor called");
             this.title = I18n.tr("AppManager");
             this.app_ref = app;
             this.registry = registry;
@@ -62,9 +63,12 @@ namespace AppManager {
             build_ui();
             setup_window_actions();
             refresh_installations();
-            registry.changed.connect(() => {
-                refresh_installations();
-            });
+            registry.changed.connect(on_registry_changed);
+        }
+
+        private void on_registry_changed() {
+            debug("MainWindow: received registry changed signal");
+            refresh_installations();
         }
 
         private void load_custom_css() {
@@ -218,6 +222,7 @@ namespace AppManager {
         }
 
         private void refresh_installations() {
+            debug("MainWindow: refresh_installations called");
             ensure_apps_group_present();
             clear_apps_group_rows();
             
