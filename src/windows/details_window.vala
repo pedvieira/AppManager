@@ -157,7 +157,7 @@ namespace AppManager {
             });
             
             // Add open button for web page
-            var open_web_button = new Gtk.Button.from_icon_name("web-browser-symbolic");
+            var open_web_button = new Gtk.Button.from_icon_name("external-link-symbolic");
             open_web_button.add_css_class("flat");
             open_web_button.set_valign(Gtk.Align.CENTER);
             open_web_button.tooltip_text = I18n.tr("Open web page");
