@@ -71,6 +71,18 @@ namespace AppManager.Core {
         }
 
         /**
+         * Reloads registry contents from disk.
+         * Useful when another AppManager process (or external tooling) modified the registry file.
+         */
+        public void reload(bool notify = true) {
+            records = new HashTable<string, InstallationRecord>(GLib.str_hash, GLib.str_equal);
+            load();
+            if (notify) {
+                notify_changed();
+            }
+        }
+
+        /**
          * Reconciles the registry with the filesystem.
          * Removes registry entries for apps that no longer exist on disk
          * and cleans up their desktop files, icons, and symlinks.
