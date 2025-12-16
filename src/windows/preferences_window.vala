@@ -22,6 +22,7 @@ namespace AppManager {
             Object();
             this.settings = settings;
             this.set_title(I18n.tr("Preferences"));
+            this.content_height = 660;
             check_portal_availability.begin();
             build_ui();
         }
