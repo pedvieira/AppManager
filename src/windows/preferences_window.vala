@@ -1,7 +1,7 @@
 using AppManager.Core;
 
 namespace AppManager {
-    public class PreferencesWindow : Adw.PreferencesWindow {
+    public class PreferencesDialog : Adw.PreferencesDialog {
         private GLib.Settings settings;
         private int[] update_interval_options = { 86400, 604800, 2592000 };
         private bool portal_available = false;
@@ -18,11 +18,10 @@ namespace AppManager {
             "  box-shadow: none;\n" +
             "}\n";
 
-        public PreferencesWindow(GLib.Settings settings) {
+        public PreferencesDialog(GLib.Settings settings) {
             Object();
             this.settings = settings;
             this.set_title(I18n.tr("Preferences"));
-            this.set_default_size(500, 670);
             check_portal_availability.begin();
             build_ui();
         }
