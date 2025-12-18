@@ -627,12 +627,14 @@ namespace AppManager.Core {
         /**
          * Select the best AppImage asset for the current system.
          * Priority:
-         *   1. AppImage matching system architecture
-         *   2. Single AppImage (if only one exists)
+         *   1. AppImage with explicit system architecture match
+         *   2. AppImage with no architecture (assumes x86_64 default)
+         *   3. Single AppImage (if only one exists)
          */
         private ReleaseAsset? select_appimage_asset(ArrayList<ReleaseAsset> assets) {
             var appimages = new ArrayList<ReleaseAsset>();
             ReleaseAsset? arch_match = null;
+            ReleaseAsset? no_arch_asset = null;
 
             foreach (var asset in assets) {
                 var name_lower = asset.name.down();
@@ -644,15 +646,25 @@ namespace AppManager.Core {
                 
                 appimages.add(asset);
                 
-                // Check architecture match (against both name and URL)
+                // Check explicit architecture match (against both name and URL)
                 if (arch_match == null && (matches_system_arch(asset.name) || matches_system_arch(asset.download_url))) {
                     arch_match = asset;
                 }
+                
+                // Track assets with no architecture in filename (common for x86_64 default)
+                if (no_arch_asset == null && !has_any_arch_in_name(asset.name)) {
+                    no_arch_asset = asset;
+                }
             }
 
-            // Return architecture match if found
+            // Return explicit architecture match if found
             if (arch_match != null) {
                 return arch_match;
+            }
+
+            // On x86_64, fall back to no-arch asset (many projects assume x86_64 is default)
+            if (no_arch_asset != null && get_system_arch() == "x86_64") {
+                return no_arch_asset;
             }
 
             // If only one AppImage exists, use it
@@ -661,6 +673,26 @@ namespace AppManager.Core {
             }
 
             return null;
+        }
+        
+        /**
+         * Check if an asset name contains any known architecture string.
+         */
+        private static bool has_any_arch_in_name(string asset_name) {
+            var name_lower = asset_name.down();
+            // All known arch patterns
+            string[] all_archs = {
+                "x86_64", "x86-64", "amd64", "x64",
+                "aarch64", "arm64",
+                "armv7l", "armhf", "arm32",
+                "i686", "i386", "ia32"
+            };
+            foreach (var arch in all_archs) {
+                if (name_lower.contains(arch)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         // ─────────────────────────────────────────────────────────────────────
