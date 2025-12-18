@@ -21,6 +21,7 @@ namespace AppManager.Core {
         public int64 updated_at { get; set; default = 0; }
         public string? version { get; set; }
         public string? etag { get; set; }
+        public string? last_release_tag { get; set; }  // Stores release tag_name for apps without version
         
         // Original values captured from AppImage's .desktop during install/update
         public string? original_commandline_args { get; set; }
@@ -117,6 +118,8 @@ namespace AppManager.Core {
             builder.add_string_value(version ?? "");
             builder.set_member_name("etag");
             builder.add_string_value(etag ?? "");
+            builder.set_member_name("last_release_tag");
+            builder.add_string_value(last_release_tag ?? "");
             
             // Original values from AppImage's .desktop
             builder.set_member_name("original_commandline_args");
@@ -221,6 +224,8 @@ namespace AppManager.Core {
             record.version = version == "" ? null : version;
             var etag = obj.get_string_member_with_default("etag", "");
             record.etag = etag == "" ? null : etag;
+            var last_release_tag = obj.get_string_member_with_default("last_release_tag", "");
+            record.last_release_tag = last_release_tag == "" ? null : last_release_tag;
             
             // Original values from AppImage's .desktop
             var original_commandline_args = obj.get_string_member_with_default("original_commandline_args", "");

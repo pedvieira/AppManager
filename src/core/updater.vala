@@ -428,8 +428,17 @@ namespace AppManager.Core {
 
                 var latest = release.version;
                 var current = record.version;
+                
+                // Version comparison: if both have versions, compare them
                 if (latest != null && current != null && compare_versions(latest, current) <= 0) {
                     return new UpdateProbeResult(record, false, latest, UpdateSkipReason.ALREADY_CURRENT, I18n.tr("Already up to date"));
+                }
+                
+                // Fallback: if version is missing, compare release tags
+                if ((latest == null || current == null) && release.tag_name != null) {
+                    if (record.last_release_tag == release.tag_name) {
+                        return new UpdateProbeResult(record, false, release.tag_name, UpdateSkipReason.ALREADY_CURRENT, I18n.tr("Already up to date"));
+                    }
                 }
 
                 return new UpdateProbeResult(record, true, latest ?? release.tag_name);
@@ -471,10 +480,21 @@ namespace AppManager.Core {
 
                 var latest = release.version;
                 var current = record.version;
+                
+                // Version comparison: if both have versions, compare them
                 if (latest != null && current != null && compare_versions(latest, current) <= 0) {
                     record_skipped(record, UpdateSkipReason.ALREADY_CURRENT);
                     log_update_event(record, "SKIP", "already current");
                     return new UpdateResult(record, UpdateStatus.SKIPPED, I18n.tr("Already up to date"), latest, UpdateSkipReason.ALREADY_CURRENT);
+                }
+                
+                // Fallback: if version is missing, compare release tags
+                if ((latest == null || current == null) && release.tag_name != null) {
+                    if (record.last_release_tag == release.tag_name) {
+                        record_skipped(record, UpdateSkipReason.ALREADY_CURRENT);
+                        log_update_event(record, "SKIP", "release tag unchanged");
+                        return new UpdateResult(record, UpdateStatus.SKIPPED, I18n.tr("Already up to date"), release.tag_name, UpdateSkipReason.ALREADY_CURRENT);
+                    }
                 }
 
                 var asset = select_appimage_asset(release.assets);
@@ -487,10 +507,17 @@ namespace AppManager.Core {
                 record_downloading(record);
 
                 var download = download_file(asset.download_url, cancellable);
+                InstallationRecord? new_record = null;
                 try {
-                    installer.upgrade(download.file_path, record);
+                    new_record = installer.upgrade(download.file_path, record);
                 } finally {
                     AppManager.Utils.FileUtils.remove_dir_recursive(download.temp_dir);
+                }
+
+                // Store the release tag for version-less apps
+                if (release.tag_name != null && new_record != null) {
+                    new_record.last_release_tag = release.tag_name;
+                    registry.persist();
                 }
 
                 var display_version = release.tag_name ?? asset.name;
@@ -534,7 +561,15 @@ namespace AppManager.Core {
                 return new UpdateCheckInfo(false, latest, current, release.tag_name);
             }
 
-            bool has_update = latest != "" && current != "" && compare_versions(latest, current) > 0;
+            // Version comparison if both have versions
+            bool has_update = false;
+            if (latest != "" && current != "" && record.version != null && release.version != null) {
+                has_update = compare_versions(latest, current) > 0;
+            } else if (release.tag_name != null) {
+                // Fallback: compare release tags for version-less apps
+                has_update = record.last_release_tag != release.tag_name;
+            }
+            
             return new UpdateCheckInfo(has_update, latest, current, release.tag_name);
         }
 
