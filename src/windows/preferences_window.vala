@@ -178,14 +178,15 @@ namespace AppManager {
                     var autostart_dir = Path.build_filename(Environment.get_user_config_dir(), "autostart");
                     DirUtils.create_with_parents(autostart_dir, 0755);
                     
+                    var exec_path = AppPaths.current_executable_path ?? "app-manager";
                     var content = """[Desktop Entry]
 Type=Application
 Name=AppManager Background Updater
-Exec=app-manager --background-update
+Exec=%s --background-update
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
 X-XDP-Autostart=com.github.AppManager
-""";
+""".printf(exec_path);
                     FileUtils.set_contents(autostart_file, content);
                     debug("Created autostart file: %s", autostart_file);
                 } catch (Error e) {

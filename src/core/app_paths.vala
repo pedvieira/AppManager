@@ -45,5 +45,19 @@ namespace AppManager.Core {
                 return dir;
             }
         }
+
+        public static string? current_executable_path {
+            owned get {
+                try {
+                    var path = GLib.FileUtils.read_link("/proc/self/exe");
+                    if (path != null && path.strip() != "") {
+                        return path;
+                    }
+                } catch (Error e) {
+                    warning("Failed to resolve self executable: %s", e.message);
+                }
+                return null;
+            }
+        }
     }
 }

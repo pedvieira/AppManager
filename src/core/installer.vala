@@ -913,15 +913,7 @@ namespace AppManager.Core {
         }
 
         private string? current_executable_path() {
-            try {
-                var path = GLib.FileUtils.read_link("/proc/self/exe");
-                if (path != null && path.strip() != "") {
-                    return path;
-                }
-            } catch (Error e) {
-                warning("Failed to resolve self executable: %s", e.message);
-            }
-            return null;
+            return AppPaths.current_executable_path;
         }
 
         private void run_appimage_extract(string appimage_path, string working_dir) throws Error {

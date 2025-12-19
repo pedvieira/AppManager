@@ -29,7 +29,8 @@ namespace AppManager.Core {
                 
                 // Build the command list for autostart
                 var commandline = new GLib.GenericArray<weak string>();
-                commandline.add("app-manager");
+                var exec_path = AppPaths.current_executable_path ?? "app-manager";
+                commandline.add(exec_path);
                 commandline.add("--background-update");
                 
                 var granted = yield portal.request_background(
@@ -60,14 +61,15 @@ namespace AppManager.Core {
                 DirUtils.create_with_parents(autostart_dir, 0755);
                 
                 var autostart_file = Path.build_filename(autostart_dir, "com.github.AppManager.desktop");
+                var exec_path = AppPaths.current_executable_path ?? "app-manager";
                 var content = """[Desktop Entry]
 Type=Application
 Name=AppManager Background Updater
-Exec=app-manager --background-update
+Exec=%s --background-update
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
 X-XDP-Autostart=com.github.AppManager
-""";
+""".printf(exec_path);
                 FileUtils.set_contents(autostart_file, content);
                 debug("Autostart file written to %s", autostart_file);
             } catch (Error e) {
