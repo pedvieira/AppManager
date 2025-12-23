@@ -12,3 +12,5 @@ StartupNotify=true
 MimeType=application/x-iso9660-appimage;
 Keywords=AppImage;Installer;Applications;
 StartupWMClass=com.github.AppManager
+X-AppImage-UpdateURL=https://github.com/kem-a/AppManager
+X-AppImage-Homepage=https://github.com/kem-a/AppManager

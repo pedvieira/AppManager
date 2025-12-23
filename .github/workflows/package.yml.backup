@@ -1,4 +1,4 @@
-name: Build and Package
+name: Build and Package (backup)
 
 on:
   push:
@@ -13,9 +13,13 @@ jobs:
         include:
           - arch: x86_64
             runs_on: ubuntu-latest
+            fpm_arch_deb: amd64
+            fpm_arch_rpm: x86_64
             is_cross: false
           - arch: aarch64
             runs_on: ubuntu-latest
+            fpm_arch_deb: arm64
+            fpm_arch_rpm: aarch64
             is_cross: true
             cross_file: .github/cross/aarch64.txt
     runs-on: ${{ matrix.runs_on }}
@@ -66,6 +70,9 @@ jobs:
             desktop-file-utils \
             chrpath \
             jq \
+            ruby \
+            ruby-dev \
+            rpm \
             p7zip-full
           if [ "${{ matrix.is_cross }}" = "true" ]; then
             # Install cross-compilation toolchain and arm64 libraries
@@ -87,6 +94,7 @@ jobs:
             echo 'PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig pkg-config "$@"' | sudo tee -a /usr/local/bin/aarch64-linux-gnu-pkg-config
             sudo chmod +x /usr/local/bin/aarch64-linux-gnu-pkg-config
           fi
+          sudo gem install --no-document fpm
 
       - name: Install appimagetool
         shell: bash
@@ -124,6 +132,32 @@ jobs:
           VERSION=$(meson introspect build --projectinfo | jq -r '.version')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Build DEB and RPM packages
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          DESTDIR="$GITHUB_WORKSPACE/dist-root"
+          PACKAGE_DIR="$GITHUB_WORKSPACE/packages"
+          mkdir -p "$PACKAGE_DIR"
+          fpm -s dir -t deb -n app-manager \
+            -v "$VERSION" \
+            --architecture ${{ matrix.fpm_arch_deb }} \
+            --description "Install and manage AppImage applications" \
+            --license GPL-3.0-or-later \
+            --url "https://github.com/kem-a/AppManager" \
+            -p "$PACKAGE_DIR/app-manager_${VERSION}_${{ matrix.fpm_arch_deb }}.deb" \
+            -C "$DESTDIR" usr
+          fpm -s dir -t rpm -n app-manager \
+            -v "$VERSION" \
+            --architecture ${{ matrix.fpm_arch_rpm }} \
+            --description "Install and manage AppImage applications" \
+            --license GPL-3.0-or-later \
+            --url "https://github.com/kem-a/AppManager" \
+            -p "$PACKAGE_DIR/app-manager-${VERSION}-1.${{ matrix.fpm_arch_rpm }}.rpm" \
+            -C "$DESTDIR" usr
+
       - name: Build AppImage
         shell: bash
         env:
@@ -137,7 +171,6 @@ jobs:
 
           rm -rf "$APPDIR"
           mkdir -p "$APPDIR"
-          mkdir -p "$PACKAGE_DIR"
 
           # Copy installed files
           cp -a "$DESTDIR/usr" "$APPDIR/"
@@ -174,6 +207,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            packages/app-manager_${{ steps.meta.outputs.version }}_${{ matrix.fpm_arch_deb }}.deb
+            packages/app-manager-${{ steps.meta.outputs.version }}-1.${{ matrix.fpm_arch_rpm }}.rpm
             packages/app-manager-${{ steps.meta.outputs.version }}-${{ matrix.arch }}.AppImage
 
       - name: Upload artifacts (for non-release builds)
