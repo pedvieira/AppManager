@@ -99,12 +99,8 @@ jobs:
       - name: Install appimagetool
         shell: bash
         run: |
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            APPIMAGETOOL_ARCH="x86_64"
-          else
-            APPIMAGETOOL_ARCH="aarch64"
-          fi
-          curl -Lo appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGETOOL_ARCH}.AppImage"
+          # appimagetool must match host architecture (x86_64), not target
+          curl -Lo appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x appimagetool
           sudo mv appimagetool /usr/local/bin/appimagetool
 
