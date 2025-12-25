@@ -277,29 +277,37 @@ Examples:
         }
 
         public void uninstall_record(InstallationRecord record, Gtk.Window? parent_window) {
+            uninstall_record_async.begin(record, parent_window);
+        }
+
+        private async void uninstall_record_async(InstallationRecord record, Gtk.Window? parent_window) {
+            SourceFunc callback = uninstall_record_async.callback;
+            Error? error = null;
+
             new Thread<void>("appmgr-uninstall", () => {
                 try {
                     installer.uninstall(record);
-                    Idle.add(() => {
-                        if (parent_window != null && parent_window is MainWindow) {
-                            ((MainWindow)parent_window).add_toast(I18n.tr("Moved to Trash"));
-                        }
-                        return GLib.Source.REMOVE;
-                    });
                 } catch (Error e) {
-                    var message = e.message;
-                    Idle.add(() => {
-                        var dialog = new Adw.AlertDialog(
-                            I18n.tr("Uninstall failed"),
-                            I18n.tr("%s could not be removed: %s").printf(record.name, message)
-                        );
-                        dialog.add_response("close", I18n.tr("Close"));
-                        dialog.set_default_response("close");
-                        dialog.present(parent_window ?? main_window);
-                        return GLib.Source.REMOVE;
-                    });
+                    error = e;
                 }
+                Idle.add((owned) callback);
             });
+
+            yield;
+
+            if (error != null) {
+                var dialog = new Adw.AlertDialog(
+                    I18n.tr("Uninstall failed"),
+                    I18n.tr("%s could not be removed: %s").printf(record.name, error.message)
+                );
+                dialog.add_response("close", I18n.tr("Close"));
+                dialog.set_default_response("close");
+                dialog.present(parent_window ?? main_window);
+            } else {
+                if (parent_window != null && parent_window is MainWindow) {
+                    ((MainWindow)parent_window).add_toast(I18n.tr("Moved to Trash"));
+                }
+            }
         }
 
         public void extract_installation(InstallationRecord record, Gtk.Window? parent_window) {
@@ -309,53 +317,49 @@ Examples:
                 return;
             }
 
+            extract_installation_async.begin(record, parent_window, source_path);
+        }
+
+        private async void extract_installation_async(InstallationRecord record, Gtk.Window? parent_window, string source_path) {
+            SourceFunc callback = extract_installation_async.callback;
+            InstallationRecord? new_record = null;
+            Error? error = null;
+            string? staging_dir = null;
+
             new Thread<void>("appmgr-extract", () => {
-                string? staging_dir = null;
                 string staged_path = "";
                 try {
                     staging_dir = Utils.FileUtils.create_temp_dir("appmgr-extract-");
                     staged_path = Path.build_filename(staging_dir, Path.get_basename(source_path));
                     Utils.FileUtils.file_copy(source_path, staged_path);
+                    new_record = installer.reinstall(staged_path, record, InstallMode.EXTRACTED);
                 } catch (Error e) {
-                    var message = e.message;
-                    Idle.add(() => {
-                        present_extract_error(parent_window, record, message);
-                        return GLib.Source.REMOVE;
-                    });
-                    if (staging_dir != null) {
-                        Utils.FileUtils.remove_dir_recursive(staging_dir);
-                    }
-                    return;
-                }
-
-                try {
-                    var new_record = installer.reinstall(staged_path, record, InstallMode.EXTRACTED);
-                    Idle.add(() => {
-                        if (parent_window != null && parent_window is MainWindow) {
-                            ((MainWindow)parent_window).add_toast(I18n.tr("Extracted for faster launch"));
-                        } else {
-                            var dialog = new Adw.AlertDialog(
-                                I18n.tr("Extraction complete"),
-                                I18n.tr("%s was extracted and will open faster.").printf(new_record.name)
-                            );
-                            dialog.add_response("close", I18n.tr("Close"));
-                            dialog.set_close_response("close");
-                            dialog.present(parent_window ?? main_window);
-                        }
-                        return GLib.Source.REMOVE;
-                    });
-                } catch (Error e) {
-                    var message = e.message;
-                    Idle.add(() => {
-                        present_extract_error(parent_window, record, message);
-                        return GLib.Source.REMOVE;
-                    });
+                    error = e;
                 } finally {
                     if (staging_dir != null) {
                         Utils.FileUtils.remove_dir_recursive(staging_dir);
                     }
                 }
+                Idle.add((owned) callback);
             });
+
+            yield;
+
+            if (error != null) {
+                present_extract_error(parent_window, record, error.message);
+            } else if (new_record != null) {
+                if (parent_window != null && parent_window is MainWindow) {
+                    ((MainWindow)parent_window).add_toast(I18n.tr("Extracted for faster launch"));
+                } else {
+                    var dialog = new Adw.AlertDialog(
+                        I18n.tr("Extraction complete"),
+                        I18n.tr("%s was extracted and will open faster.").printf(new_record.name)
+                    );
+                    dialog.add_response("close", I18n.tr("Close"));
+                    dialog.set_close_response("close");
+                    dialog.present(parent_window ?? main_window);
+                }
+            }
         }
 
         private void present_extract_error(Gtk.Window? parent_window, InstallationRecord record, string message) {

@@ -660,13 +660,23 @@ namespace AppManager {
 
         private void start_update_check() {
             set_update_button_state(UpdateWorkflowState.CHECKING);
+            start_update_check_async.begin();
+        }
+
+        private async void start_update_check_async() {
+            SourceFunc callback = start_update_check_async.callback;
+            Gee.ArrayList<UpdateProbeResult>? probes = null;
+
             new Thread<void>("appmgr-check-updates", () => {
-                var probes = updater.probe_updates();
-                Idle.add(() => {
-                    handle_probe_results(probes);
-                    return GLib.Source.REMOVE;
-                });
+                probes = updater.probe_updates();
+                Idle.add((owned) callback);
             });
+
+            yield;
+
+            if (probes != null) {
+                handle_probe_results(probes);
+            }
         }
 
         private void handle_probe_results(Gee.ArrayList<UpdateProbeResult> probes) {
@@ -701,14 +711,24 @@ namespace AppManager {
                 updating_records.add(key);
             }
             refresh_installations();
+            start_update_install_async.begin();
+        }
+
+        private async void start_update_install_async() {
+            SourceFunc callback = start_update_install_async.callback;
+            Gee.ArrayList<UpdateResult>? results = null;
+
             new Thread<void>("appmgr-update", () => {
-                var results = updater.update_all();
-                Idle.add(() => {
-                    handle_update_results(results);
-                    finalize_update_workflow(results);
-                    return GLib.Source.REMOVE;
-                });
+                results = updater.update_all();
+                Idle.add((owned) callback);
             });
+
+            yield;
+
+            if (results != null) {
+                handle_update_results(results);
+                finalize_update_workflow(results);
+            }
         }
 
         private void trigger_single_update(InstallationRecord record) {
@@ -718,19 +738,29 @@ namespace AppManager {
                 active_details_window.set_update_loading(true);
             }
             refresh_installations();
+            trigger_single_update_async.begin(record);
+        }
+
+        private async void trigger_single_update_async(InstallationRecord record) {
+            SourceFunc callback = trigger_single_update_async.callback;
+            UpdateResult? result = null;
+
             new Thread<void>("appmgr-update-single", () => {
-                var result = updater.update_single(record);
+                result = updater.update_single(record);
+                Idle.add((owned) callback);
+            });
+
+            yield;
+
+            if (active_details_window != null && active_details_window.matches_record(record)) {
+                active_details_window.set_update_loading(false);
+            }
+            if (result != null) {
                 var payload = new Gee.ArrayList<UpdateResult>();
                 payload.add(result);
-                Idle.add(() => {
-                    if (active_details_window != null && active_details_window.matches_record(record)) {
-                        active_details_window.set_update_loading(false);
-                    }
-                    handle_update_results(payload);
-                    finalize_single_update(result);
-                    return GLib.Source.REMOVE;
-                });
-            });
+                handle_update_results(payload);
+                finalize_single_update(result);
+            }
         }
 
         private void finalize_single_update(UpdateResult result) {
@@ -912,16 +942,26 @@ namespace AppManager {
             if (source != null) {
                 source.set_update_loading(true);
             }
+            start_single_probe_async.begin(record, source);
+        }
+
+        private async void start_single_probe_async(InstallationRecord record, DetailsWindow? source) {
+            SourceFunc callback = start_single_probe_async.callback;
+            UpdateProbeResult? result = null;
+
             new Thread<void>("appmgr-probe-single", () => {
-                var result = updater.probe_single(record);
-                Idle.add(() => {
-                    if (source != null) {
-                        source.set_update_loading(false);
-                    }
-                    handle_single_probe_result(result, source);
-                    return GLib.Source.REMOVE;
-                });
+                result = updater.probe_single(record);
+                Idle.add((owned) callback);
             });
+
+            yield;
+
+            if (source != null) {
+                source.set_update_loading(false);
+            }
+            if (result != null) {
+                handle_single_probe_result(result, source);
+            }
         }
 
         private void handle_single_probe_result(UpdateProbeResult result, DetailsWindow? source) {

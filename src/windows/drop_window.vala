@@ -451,26 +451,34 @@ namespace AppManager {
 
             var staged_copy = staged_path;
             var staged_dir_capture = staged_dir;
+            run_installation_async.begin(staged_copy, staged_dir_capture, existing_target, mode, intent);
+        }
+
+        private async void run_installation_async(string staged_copy, string staged_dir_capture, InstallationRecord? existing_target, InstallMode mode, InstallIntent intent) {
+            SourceFunc callback = run_installation_async.callback;
+            InstallationRecord? record = null;
+            Error? error = null;
+
             new Thread<void>("appmgr-install", () => {
                 try {
-                    InstallationRecord record;
                     if (existing_target != null) {
                         record = installer.upgrade(staged_copy, existing_target);
                     } else {
                         record = installer.install(staged_copy, mode);
                     }
-                    Idle.add(() => {
-                        handle_install_success(record, existing_target != null, intent, staged_dir_capture);
-                        return GLib.Source.REMOVE;
-                    });
                 } catch (Error e) {
-                    var message = e.message;
-                    Idle.add(() => {
-                        handle_install_failure(message, staged_dir_capture);
-                        return GLib.Source.REMOVE;
-                    });
+                    error = e;
                 }
+                Idle.add((owned) callback);
             });
+
+            yield;
+
+            if (error != null) {
+                handle_install_failure(error.message, staged_dir_capture);
+            } else if (record != null) {
+                handle_install_success(record, existing_target != null, intent, staged_dir_capture);
+            }
         }
 
         private void handle_install_success(InstallationRecord record, bool upgraded, InstallIntent intent, string? staging_dir) {
@@ -562,32 +570,31 @@ namespace AppManager {
 
         private void load_icons_async() {
             set_drag_spinner_icon_active(true);
+            load_icons_thread_async.begin();
+        }
+
+        private async void load_icons_thread_async() {
+            SourceFunc callback = load_icons_thread_async.callback;
+            Gdk.Paintable? texture = null;
+
             new Thread<void>("appmgr-icon", () => {
                 try {
-                    var texture = extract_icon_from_appimage(appimage_path);
-                    if (texture != null) {
-                        Idle.add(() => {
-                            app_icon.set_from_paintable(texture);
-                            sync_drag_ghost();
-                            set_drag_spinner_icon_active(false);
-                            return GLib.Source.REMOVE;
-                        });
-                    } else {
-                        Idle.add(() => {
-                            app_icon.set_from_icon_name("application-x-executable");
-                            sync_drag_ghost();
-                            set_drag_spinner_icon_active(false);
-                            return GLib.Source.REMOVE;
-                        });
-                    }
+                    texture = extract_icon_from_appimage(appimage_path);
                 } catch (Error e) {
                     warning("Icon preview failed: %s", e.message);
-                    Idle.add(() => {
-                        set_drag_spinner_icon_active(false);
-                        return GLib.Source.REMOVE;
-                    });
                 }
+                Idle.add((owned) callback);
             });
+
+            yield;
+
+            if (texture != null) {
+                app_icon.set_from_paintable(texture);
+            } else {
+                app_icon.set_from_icon_name("application-x-executable");
+            }
+            sync_drag_ghost();
+            set_drag_spinner_icon_active(false);
         }
 
         private void setup_drag_install(Gtk.Box drag_container) {
