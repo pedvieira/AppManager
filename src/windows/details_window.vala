@@ -11,6 +11,8 @@ namespace AppManager {
         private Gtk.Button? update_button;
         private Gtk.Spinner? update_spinner;
         private Gtk.Button? extract_button;
+        private Adw.Banner? path_banner;
+        private Adw.SwitchRow? path_row;
         
         // Shared state for build_ui sub-methods
         private string exec_path;
@@ -78,11 +80,9 @@ namespace AppManager {
 
             var content_box = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
 
-            if (!path_contains_local_bin()) {
-                var banner = new Adw.Banner(I18n.tr("Add ~/.local/bin to PATH so Add to $PATH works from the terminal."));
-                banner.set_revealed(true);
-                content_box.append(banner);
-            }
+            path_banner = new Adw.Banner(I18n.tr("⚠️ '~/.local/bin' is not in $PATH. App will not launch from the terminal"));
+            content_box.append(path_banner);
+            update_path_banner_visibility();
 
             content_box.append(detail_page);
             toolbar.set_content(content_box);
@@ -477,7 +477,7 @@ namespace AppManager {
         }
 
         private Adw.SwitchRow build_path_row() {
-            var path_row = new Adw.SwitchRow();
+            path_row = new Adw.SwitchRow();
             path_row.title = I18n.tr("Add to $PATH");
             path_row.subtitle = I18n.tr("Create a launcher in ~/.local/bin so you can run it from the terminal");
 
@@ -527,6 +527,7 @@ namespace AppManager {
                         path_row.active = true;
                     }
                 }
+                update_path_banner_visibility();
             });
             
             return path_row;
@@ -742,14 +743,39 @@ namespace AppManager {
             dialog.present(this);
         }
 
-        private bool path_contains_local_bin() {
-            var path_env = Environment.get_variable("PATH") ?? "";
-            var home_bin = AppPaths.local_bin_dir;
-            foreach (var segment in path_env.split(":")) {
-                if (segment.strip() == home_bin) {
-                    return true;
-                }
+        private void update_path_banner_visibility() {
+            if (path_banner == null || path_row == null) {
+                return;
             }
+
+            bool needs_path = path_row.active;
+            bool path_missing = !path_contains_local_bin();
+
+            path_banner.set_revealed(needs_path && path_missing);
+        }
+
+        private bool path_contains_local_bin() {
+            var home_bin = AppPaths.local_bin_dir;
+            var local_bin_suffix = "/" + LOCAL_BIN_DIRNAME;
+            
+            // Check shell's login PATH (handles desktop launches)
+            try {
+                string std_out;
+                int exit_status;
+                Process.spawn_command_line_sync("sh -l -c 'echo $PATH'", out std_out, null, out exit_status);
+                
+                if (exit_status == 0 && std_out != null) {
+                    foreach (var segment in std_out.split(":")) {
+                        var clean = segment.strip();
+                        if (clean == home_bin || clean.has_suffix(local_bin_suffix)) {
+                            return true;
+                        }
+                    }
+                }
+            } catch (Error e) {
+                // Fallback failed, assume not configured
+            }
+            
             return false;
         }
 
