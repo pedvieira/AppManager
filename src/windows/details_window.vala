@@ -11,7 +11,6 @@ namespace AppManager {
         private Gtk.Button? update_button;
         private Gtk.Spinner? update_spinner;
         private Gtk.Button? extract_button;
-        private const string LOCAL_BIN_DIR = ".local/bin";
         
         // Shared state for build_ui sub-methods
         private string exec_path;
@@ -751,7 +750,7 @@ namespace AppManager {
 
         private bool path_contains_local_bin() {
             var path_env = Environment.get_variable("PATH") ?? "";
-            var home_bin = Path.build_filename(Environment.get_home_dir(), LOCAL_BIN_DIR);
+            var home_bin = AppPaths.local_bin_dir;
             foreach (var segment in path_env.split(":")) {
                 if (segment.strip() == home_bin) {
                     return true;

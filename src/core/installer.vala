@@ -166,10 +166,10 @@ namespace AppManager.Core {
                 var staging_template = Path.build_filename(AppPaths.extracted_root, "%s-extract-XXXXXX".printf(base_name));
                 staging_dir = DirUtils.mkdtemp(staging_template);
                 run_appimage_extract(metadata.path, staging_dir);
-                var extracted_root = Path.build_filename(staging_dir, "squashfs-root");
+                var extracted_root = Path.build_filename(staging_dir, SQUASHFS_ROOT_DIR);
                 var extracted_file = File.new_for_path(extracted_root);
                 if (!extracted_file.query_exists()) {
-                    throw new InstallerError.EXTRACTION_FAILED("AppImage extraction did not produce squashfs-root");
+                    throw new InstallerError.EXTRACTION_FAILED("AppImage extraction did not produce %s".printf(SQUASHFS_ROOT_DIR));
                 }
                 
                 // Some AppImages create squashfs-root as a symlink (e.g., to AppDir).
@@ -185,9 +185,9 @@ namespace AppManager.Core {
                             resolved_path = Path.build_filename(staging_dir, link_target);
                         }
                         extracted_file = File.new_for_path(resolved_path);
-                        debug("squashfs-root is a symlink, resolved to: %s", resolved_path);
+                        debug("%s is a symlink, resolved to: %s", SQUASHFS_ROOT_DIR, resolved_path);
                     } catch (Error e) {
-                        throw new InstallerError.EXTRACTION_FAILED("Failed to resolve squashfs-root symlink: %s".printf(e.message));
+                        throw new InstallerError.EXTRACTION_FAILED("Failed to resolve %s symlink: %s".printf(SQUASHFS_ROOT_DIR, e.message));
                     }
                 }
                 
@@ -493,7 +493,7 @@ namespace AppManager.Core {
                 var effective_web_page = record.get_effective_web_page();
                 
                 var desktop_contents = rewrite_desktop(desktop_path, exec_path, record, is_terminal_app, final_slug, is_upgrade, effective_icon, effective_keywords, effective_wmclass, effective_args, effective_update_link, effective_web_page);
-                var desktop_filename = "%s-%s.desktop".printf("appmanager", final_slug);
+                var desktop_filename = "%s-%s.desktop".printf(DESKTOP_FILE_PREFIX, final_slug);
                 var desktop_destination = Path.build_filename(AppPaths.desktop_dir, desktop_filename);
                 Utils.FileUtils.ensure_parent(desktop_destination);
                 
@@ -1074,7 +1074,7 @@ namespace AppManager.Core {
                 warning("AppImage extract stdout: %s", stdout_str ?? "");
                 warning("AppImage extract stderr: %s", stderr_str ?? "");
                 // Fallback for DwarFS-based AppImages that the runtime cannot extract
-                var dwarfs_output = Path.build_filename(working_dir, "squashfs-root");
+                var dwarfs_output = Path.build_filename(working_dir, SQUASHFS_ROOT_DIR);
                 DirUtils.create_with_parents(dwarfs_output, 0755);
                 if (DwarfsTools.extract_all(appimage_path, dwarfs_output)) {
                     return;
@@ -1085,8 +1085,7 @@ namespace AppManager.Core {
 
         private string? create_bin_symlink(string exec_path, string slug) {
             try {
-                var bin_dir = Path.build_filename(Environment.get_home_dir(), ".local", "bin");
-                DirUtils.create_with_parents(bin_dir, 0755);
+                var bin_dir = AppPaths.local_bin_dir;
                 
                 var symlink_path = Path.build_filename(bin_dir, slug);
                 var symlink_file = File.new_for_path(symlink_path);
