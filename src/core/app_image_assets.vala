@@ -10,25 +10,6 @@ namespace AppManager.Core {
         EXTRACTION_FAILED
     }
 
-    public class DesktopEntryMetadata : Object {
-        public string? name { get; set; }
-        public string? version { get; set; }
-        public bool is_terminal { get; set; }
-
-        public DesktopEntryMetadata() {
-            is_terminal = false;
-        }
-    }
-
-    /**
-     * Internal helper for DwarFS-based AppImage extraction.
-     * 
-     * Methods in this class use the "try-pattern": they return false/null on failure
-     * rather than throwing exceptions. This allows callers to implement fallback logic
-     * (e.g., try 7z first, then DwarFS) without exception handling overhead.
-     * 
-     * When tools are unavailable, a warning is logged once per session.
-     */
     internal class DwarfsTools : Object {
         private static bool checked_tools = false;
         private static bool available_cache = false;
@@ -265,43 +246,8 @@ namespace AppManager.Core {
         private const string DIRICON_NAME = ".DirIcon";
         private const int MAX_SYMLINK_ITERATIONS = 5;
 
-        public static DesktopEntryMetadata parse_desktop_file(string desktop_path) throws Error {
-            var metadata = new DesktopEntryMetadata();
-            var key_file = new KeyFile();
-            key_file.load_from_file(desktop_path, KeyFileFlags.NONE);
-            if (key_file.has_key("Desktop Entry", "Name")) {
-                metadata.name = key_file.get_string("Desktop Entry", "Name");
-            }
-            if (key_file.has_key("Desktop Entry", "X-AppImage-Version")) {
-                var version = key_file.get_string("Desktop Entry", "X-AppImage-Version").strip();
-                if (version.length > 0) {
-                    metadata.version = version;
-                }
-            } else {
-                // Some AppImages place X-AppImage-Version after Desktop Action sections,
-                // which causes it to be parsed into the wrong group. Search all groups.
-                metadata.version = find_key_in_any_group(key_file, "X-AppImage-Version");
-            }
-            if (key_file.has_key("Desktop Entry", "Terminal")) {
-                metadata.is_terminal = key_file.get_boolean("Desktop Entry", "Terminal");
-            }
-            return metadata;
-        }
-
-        private static string? find_key_in_any_group(KeyFile key_file, string key) {
-            try {
-                foreach (var group in key_file.get_groups()) {
-                    if (key_file.has_key(group, key)) {
-                        var value = key_file.get_string(group, key).strip();
-                        if (value.length > 0) {
-                            return value;
-                        }
-                    }
-                }
-            } catch (Error e) {
-                // Ignore errors when searching
-            }
-            return null;
+        public static DesktopEntry parse_desktop_file(string desktop_path) throws Error {
+            return new DesktopEntry(desktop_path);
         }
 
         public static string extract_desktop_entry(string appimage_path, string temp_root) throws Error {

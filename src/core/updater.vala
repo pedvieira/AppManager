@@ -311,11 +311,10 @@ namespace AppManager.Core {
             }
 
             try {
-                var keyfile = new KeyFile();
-                keyfile.load_from_file(record.desktop_file, KeyFileFlags.NONE);
-                if (keyfile.has_key("Desktop Entry", "X-AppImage-UpdateURL")) {
-                    var value = keyfile.get_string("Desktop Entry", "X-AppImage-UpdateURL").strip();
-                    return value.length > 0 ? value : null;
+                var entry = new DesktopEntry(record.desktop_file);
+                var value = entry.appimage_update_url;
+                if (value != null && value.strip() != "") {
+                    return value.strip();
                 }
             } catch (Error e) {
                 warning("Failed to read update URL for %s: %s", record.name, e.message);

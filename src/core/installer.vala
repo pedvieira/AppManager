@@ -11,19 +11,6 @@ namespace AppManager.Core {
         UNKNOWN
     }
 
-    /**
-     * Data structure holding original values extracted from an AppImage's bundled .desktop file.
-     */
-    internal class ExtractedDesktopProps : Object {
-        public string? icon_name;
-        public string? keywords;
-        public string? startup_wm_class;
-        public string? exec_args;
-        public string? homepage;
-        public string? update_url;
-        public string? resolved_exec;
-    }
-
     public class Installer : Object {
         private InstallationRegistry registry;
         private Settings settings;
@@ -221,10 +208,9 @@ namespace AppManager.Core {
                 var temp_dir = Utils.FileUtils.create_temp_dir("appmgr-desktop-check-");
                 try {
                     var desktop_path = AppImageAssets.extract_desktop_entry(metadata.path, temp_dir);
-                    var key_file = new KeyFile();
-                    key_file.load_from_file(desktop_path, KeyFileFlags.NONE);
-                    if (key_file.has_key("Desktop Entry", "Exec")) {
-                        var exec_value = key_file.get_string("Desktop Entry", "Exec");
+                    var entry = new DesktopEntry(desktop_path);
+                    if (entry.exec != null) {
+                        var exec_value = entry.exec;
                         // Check if Exec contains AppRun (without path or with relative path)
                         if ("AppRun" in exec_value) {
                             // Try to parse BIN from AppRun
@@ -248,41 +234,6 @@ namespace AppManager.Core {
             
             record.installed_path = dest_dir;
                 finalize_desktop_and_icon(record, metadata, exec_target, metadata.path, is_upgrade, app_run);
-        }
-
-        /**
-         * Extracts original property values from an AppImage's bundled .desktop file.
-         */
-        private ExtractedDesktopProps extract_desktop_properties(string desktop_path, string? app_run_path) {
-            var props = new ExtractedDesktopProps();
-            try {
-                var key_file = new KeyFile();
-                key_file.load_from_file(desktop_path, KeyFileFlags.NONE);
-                
-                if (key_file.has_key("Desktop Entry", "Icon")) {
-                    props.icon_name = key_file.get_string("Desktop Entry", "Icon");
-                }
-                if (key_file.has_key("Desktop Entry", "Keywords")) {
-                    props.keywords = key_file.get_string("Desktop Entry", "Keywords");
-                }
-                if (key_file.has_key("Desktop Entry", "StartupWMClass")) {
-                    props.startup_wm_class = key_file.get_string("Desktop Entry", "StartupWMClass");
-                }
-                if (key_file.has_key("Desktop Entry", "Exec")) {
-                    var exec_value = key_file.get_string("Desktop Entry", "Exec");
-                    props.resolved_exec = resolve_exec_from_desktop(exec_value, app_run_path);
-                    props.exec_args = extract_exec_arguments(exec_value);
-                }
-                if (key_file.has_key("Desktop Entry", "X-AppImage-Homepage")) {
-                    props.homepage = key_file.get_string("Desktop Entry", "X-AppImage-Homepage");
-                }
-                if (key_file.has_key("Desktop Entry", "X-AppImage-UpdateURL")) {
-                    props.update_url = key_file.get_string("Desktop Entry", "X-AppImage-UpdateURL");
-                }
-            } catch (Error e) {
-                warning("Failed to read desktop properties: %s", e.message);
-            }
-            return props;
         }
 
         /**
@@ -391,18 +342,18 @@ namespace AppManager.Core {
                 string desktop_name = metadata.display_name;
                 string? desktop_version = null;
                 bool is_terminal_app = false;
-                try {
-                    var desktop_info = AppImageAssets.parse_desktop_file(desktop_path);
-                    if (desktop_info.name != null && desktop_info.name.strip() != "") {
-                        desktop_name = desktop_info.name.strip();
-                    }
-                    if (desktop_info.version != null) {
-                        desktop_version = desktop_info.version;
-                    }
-                    is_terminal_app = desktop_info.is_terminal;
-                } catch (Error e) {
-                    warning("Failed to parse desktop metadata: %s", e.message);
+                
+                // Use DesktopEntry to parse the file once
+                var desktop_entry = new DesktopEntry(desktop_path);
+                
+                if (desktop_entry.name != null && desktop_entry.name.strip() != "") {
+                    desktop_name = desktop_entry.name.strip();
                 }
+                if (desktop_entry.version != null) {
+                    desktop_version = desktop_entry.version;
+                }
+                is_terminal_app = desktop_entry.terminal;
+                
                 record.name = desktop_name;
                 record.version = desktop_version;
                 record.is_terminal = is_terminal_app;
@@ -455,15 +406,16 @@ namespace AppManager.Core {
                     }
                 }
                 
-                // Extract original Icon name from desktop file
-                var props = extract_desktop_properties(desktop_path, app_run_path);
-                var original_icon_name = props.icon_name;
-                var original_keywords = props.keywords;
-                var original_startup_wm_class = props.startup_wm_class;
-                var original_exec_args = props.exec_args;
-                var original_homepage = props.homepage;
-                var original_update_url = props.update_url;
-                resolved_entry_exec = props.resolved_exec;
+                // Extract original values from desktop entry
+                var original_icon_name = desktop_entry.icon;
+                var original_keywords = desktop_entry.keywords;
+                var original_startup_wm_class = desktop_entry.startup_wm_class;
+                var original_homepage = desktop_entry.appimage_homepage;
+                var original_update_url = desktop_entry.appimage_update_url;
+                
+                var exec_value = desktop_entry.exec;
+                var original_exec_args = exec_value != null ? extract_exec_arguments(exec_value) : null;
+                resolved_entry_exec = exec_value != null ? resolve_exec_from_desktop(exec_value, app_run_path) : null;
                 
                 // Derive icon name without path and extension
                 var icon_name_for_desktop = derive_icon_name(original_icon_name, final_slug);
@@ -584,246 +536,60 @@ namespace AppManager.Core {
         }
 
         private string rewrite_desktop(string desktop_path, string exec_target, InstallationRecord record, bool is_terminal, string slug, bool is_upgrade, string? effective_icon_name, string? effective_keywords, string? effective_startup_wm_class, string? effective_commandline_args, string? effective_update_link, string? effective_web_page) throws Error {
-            string contents;
-            if (!GLib.FileUtils.get_contents(desktop_path, out contents)) {
-                throw new InstallerError.DESKTOP_MISSING("Failed to read desktop file");
-            }
-
-            var output_lines = new Gee.ArrayList<string>();
-            bool actions_handled = false;
-            bool no_display_handled = false;
-            bool startup_wm_class_handled = false;
-            bool keywords_handled = false;
-            bool homepage_handled = false;
-            bool update_url_handled = false;
-            bool icon_handled = false;
-            bool skipping_uninstall_block = false;
-            bool in_desktop_entry = false;
-
-            foreach (var line in contents.split("\n")) {
-                var trimmed = line.strip();
-
-                // Handle section headers
-                if (trimmed.has_prefix("[") && trimmed.has_suffix("]")) {
-                    if (trimmed == "[Desktop Action Uninstall]") {
-                        skipping_uninstall_block = true;
-                        in_desktop_entry = false;
-                        continue;
-                    }
-                    skipping_uninstall_block = false;
-                    in_desktop_entry = trimmed == "[Desktop Entry]";
-                    output_lines.add(line);
-                    continue;
-                }
-
-                // Skip existing uninstall action block
-                if (skipping_uninstall_block) {
-                    continue;
-                }                // Pass through non-Desktop Entry sections unchanged
-                if (!in_desktop_entry) {
-                    output_lines.add(line);
-                    continue;
-                }
-
-                // Drop TryExec to avoid GNOME misreporting installed apps
-                if (trimmed.has_prefix("TryExec=")) {
-                    continue;
-                }
-                // Replace Exec in Desktop Entry section
-                if (trimmed.has_prefix("Exec=")) {
-                    // Use effective command line args (considers custom and CLEARED values)
-                    var args = effective_commandline_args ?? "";
-                    if (args.strip() != "") {
-                        output_lines.add("Exec=\"%s\" %s".printf(exec_target, args));
-                    } else {
-                        output_lines.add("Exec=\"%s\"".printf(exec_target));
-                    }
-                    continue;
-                }
-
-                // Replace Icon in Desktop Entry section
-                if (trimmed.has_prefix("Icon=")) {
-                    icon_handled = true;
-                    // If icon is null/empty (CLEARED), remove the line entirely
-                    if (effective_icon_name != null && effective_icon_name.strip() != "") {
-                        output_lines.add("Icon=%s".printf(effective_icon_name));
-                    }
-                    // Otherwise drop the line
-                    continue;
-                }
-
-                // Handle StartupWMClass
-                if (trimmed.has_prefix("StartupWMClass=")) {
-                    startup_wm_class_handled = true;
-                    // If wmclass is null/empty (CLEARED), remove the line entirely
-                    if (effective_startup_wm_class != null && effective_startup_wm_class.strip() != "") {
-                        output_lines.add("StartupWMClass=%s".printf(effective_startup_wm_class));
-                    }
-                    // Otherwise drop the line
-                    continue;
-                }
-
-                // Handle Keywords
-                if (trimmed.has_prefix("Keywords=")) {
-                    keywords_handled = true;
-                    if (effective_keywords != null && effective_keywords.strip() != "") {
-                        output_lines.add("Keywords=%s".printf(effective_keywords));
-                    }
-                    // If keywords is null/empty, drop the line
-                    continue;
-                }
-
-                // Handle NoDisplay for terminal apps
-                if (trimmed.has_prefix("NoDisplay=")) {
-                    no_display_handled = true;
-                    if (is_terminal) {
-                        output_lines.add("NoDisplay=true");
-                    } else {
-                        output_lines.add(line);
-                    }
-                    continue;
-                }
-
-                // Handle Terminal
-                if (trimmed.has_prefix("Terminal=")) {
-                    output_lines.add(line);
-                    continue;
-                }
-
-                // Handle custom X-AppImage fields
-                if (trimmed.has_prefix("X-AppImage-Homepage=")) {
-                    homepage_handled = true;
-                    if (effective_web_page != null && effective_web_page.strip() != "") {
-                        output_lines.add("X-AppImage-Homepage=%s".printf(effective_web_page));
-                    }
-                    // If web_page is null/empty, drop the line
-                    continue;
-                }
-
-                if (trimmed.has_prefix("X-AppImage-UpdateURL=")) {
-                    update_url_handled = true;
-                    if (effective_update_link != null && effective_update_link.strip() != "") {
-                        output_lines.add("X-AppImage-UpdateURL=%s".printf(effective_update_link));
-                    }
-                    // If update_link is null/empty, drop the line
-                    continue;
-                }                if (trimmed.has_prefix("Actions=")) {
-                    actions_handled = true;
-                    var value = trimmed.substring("Actions=".length);
-                    var actions = new Gee.ArrayList<string>();
-                    foreach (var part in value.split(";")) {
-                        var action = part.strip();
-                        if (action != "" && action != "Uninstall") {
-                            actions.add(action);
-                        }
-                    }
-                    actions.add("Uninstall");
-                    var action_builder = new StringBuilder();
-                    bool first_action = true;
-                    foreach (var action_name in actions) {
-                        if (!first_action) {
-                            action_builder.append(";");
-                        }
-                        action_builder.append(action_name);
-                        first_action = false;
-                    }
-                    action_builder.append(";");
-                    output_lines.add("Actions=%s".printf(action_builder.str));
-                    continue;
-                }
-
-                // Keep all other lines unchanged
-                output_lines.add(line);
-            }
-
-            // Add custom fields from registry that weren't in the original desktop file
-            int insert_pos = -1;
-            for (int i = 0; i < output_lines.size; i++) {
-                var line = output_lines[i].strip();
-                if (line == "[Desktop Entry]") {
-                    insert_pos = i + 1;
-                } else if (insert_pos > 0 && line.has_prefix("[") && line.has_suffix("]")) {
-                    break;
-                } else if (insert_pos > 0) {
-                    insert_pos = i + 1;
-                }
+            var entry = new DesktopEntry(desktop_path);
+            
+            // Update Exec
+            var args = effective_commandline_args ?? "";
+            if (args.strip() != "") {
+                entry.exec = "\"%s\" %s".printf(exec_target, args);
+            } else {
+                entry.exec = "\"%s\"".printf(exec_target);
             }
             
-            // Add Icon if not handled and has value
-            if (!icon_handled && effective_icon_name != null && effective_icon_name.strip() != "") {
-                if (insert_pos > 0) {
-                    output_lines.insert(insert_pos, "Icon=%s".printf(effective_icon_name));
-                    insert_pos++;
-                }
+            // Update Icon
+            entry.icon = (effective_icon_name != null && effective_icon_name.strip() != "") ? effective_icon_name : null;
+            
+            // Update StartupWMClass
+            entry.startup_wm_class = (effective_startup_wm_class != null && effective_startup_wm_class.strip() != "") ? effective_startup_wm_class : null;
+            
+            // Update Keywords
+            entry.keywords = (effective_keywords != null && effective_keywords.strip() != "") ? effective_keywords : null;
+            
+            // Update NoDisplay
+            if (is_terminal) {
+                entry.no_display = true;
             }
             
-            // Add Keywords if not handled and has value
-            if (!keywords_handled && effective_keywords != null && effective_keywords.strip() != "") {
-                if (insert_pos > 0) {
-                    output_lines.insert(insert_pos, "Keywords=%s".printf(effective_keywords));
-                    insert_pos++;
-                }
-            }
+            // Update X-AppImage fields
+            entry.appimage_homepage = (effective_web_page != null && effective_web_page.strip() != "") ? effective_web_page : null;
+            entry.appimage_update_url = (effective_update_link != null && effective_update_link.strip() != "") ? effective_update_link : null;
             
-            // Add Homepage if not handled and has value
-            if (!homepage_handled && effective_web_page != null && effective_web_page.strip() != "") {
-                if (insert_pos > 0) {
-                    output_lines.insert(insert_pos, "X-AppImage-Homepage=%s".printf(effective_web_page));
-                    insert_pos++;
+            // Ensure Uninstall action exists
+            var actions_str = entry.actions ?? "";
+            var actions = new Gee.ArrayList<string>();
+            foreach (var part in actions_str.split(";")) {
+                var action = part.strip();
+                if (action != "" && action != "Uninstall") {
+                    actions.add(action);
                 }
             }
+            actions.add("Uninstall");
             
-            // Add UpdateURL if not handled and has value
-            if (!update_url_handled && effective_update_link != null && effective_update_link.strip() != "") {
-                if (insert_pos > 0) {
-                    output_lines.insert(insert_pos, "X-AppImage-UpdateURL=%s".printf(effective_update_link));
-                    insert_pos++;
-                }
+            var action_builder = new StringBuilder();
+            foreach (var action_name in actions) {
+                action_builder.append(action_name);
+                action_builder.append(";");
             }
-
-            // Add Actions line if not present
-            if (!actions_handled) {
-                if (insert_pos > 0) {
-                    output_lines.insert(insert_pos, "Actions=Uninstall;");
-                    insert_pos++;
-                } else {
-                    output_lines.add("Actions=Uninstall;");
-                }
-            }
-
-            // Add NoDisplay for terminal apps if not already set
-            if (is_terminal && !no_display_handled) {
-                if (insert_pos > 0) {
-                    output_lines.insert(insert_pos, "NoDisplay=true");
-                    insert_pos++;
-                } else {
-                    output_lines.add("NoDisplay=true");
-                }
-            }
-
-            // Add StartupWMClass if not present and has value
-            if (!startup_wm_class_handled && effective_startup_wm_class != null && effective_startup_wm_class.strip() != "") {
-                if (insert_pos > 0) {
-                    output_lines.insert(insert_pos, "StartupWMClass=%s".printf(effective_startup_wm_class));
-                } else {
-                    output_lines.add("StartupWMClass=%s".printf(effective_startup_wm_class));
-                }
-            }
-
+            entry.actions = action_builder.str;
+            
+            // Remove TryExec
+            entry.remove_key("TryExec");
+            
             // Add Uninstall action block
             var uninstall_exec = build_uninstall_exec(record.installed_path);
-            output_lines.add("");
-            output_lines.add("[Desktop Action Uninstall]");
-            output_lines.add("Name=%s".printf(I18n.tr("Move to Trash")));
-            output_lines.add("Exec=%s".printf(uninstall_exec));
-            output_lines.add("Icon=user-trash");
-
-            var final_builder = new StringBuilder();
-            foreach (var output_line in output_lines) {
-                final_builder.append(output_line);
-                final_builder.append("\n");
-            }
-            return final_builder.str;
+            entry.set_action_group("Uninstall", I18n.tr("Move to Trash"), uninstall_exec, "user-trash");
+            
+            return entry.to_data();
         }
 
         private string? extract_base_exec_token(string exec_value) {
@@ -1147,9 +913,8 @@ namespace AppManager.Core {
 
             if (record.desktop_file != null && record.desktop_file.strip() != "") {
                 try {
-                    var keyfile = new KeyFile();
-                    keyfile.load_from_file(record.desktop_file, KeyFileFlags.NONE);
-                    exec_value = keyfile.get_string("Desktop Entry", "Exec");
+                    var entry = new DesktopEntry(record.desktop_file);
+                    exec_value = entry.exec ?? "";
                 } catch (Error e) {
                     warning("Failed to read Exec from desktop file %s: %s", record.desktop_file, e.message);
                 }
@@ -1234,11 +999,8 @@ namespace AppManager.Core {
 
             bool is_terminal = false;
             try {
-                var keyfile = new KeyFile();
-                keyfile.load_from_file(desktop_path, KeyFileFlags.NONE);
-                if (keyfile.has_key("Desktop Entry", "Terminal")) {
-                    is_terminal = keyfile.get_boolean("Desktop Entry", "Terminal");
-                }
+                var entry = new DesktopEntry(desktop_path);
+                is_terminal = entry.terminal;
             } catch (Error e) {
                 // If we fail to parse Terminal, treat as non-terminal.
                 is_terminal = false;
@@ -1328,35 +1090,14 @@ namespace AppManager.Core {
             if (record.desktop_file == null || record.installed_path == null) {
                 return;
             }
-            string contents;
-            if (!GLib.FileUtils.get_contents(record.desktop_file, out contents)) {
-                return;
-            }
-            var builder = new StringBuilder();
-            bool in_uninstall_block = false;
-            bool modified = false;
-            foreach (var line in contents.split("\n")) {
-                var trimmed = line.strip();
-                if (trimmed == "[Desktop Action Uninstall]") {
-                    in_uninstall_block = true;
-                    builder.append(line + "\n");
-                    continue;
-                }
-                if (in_uninstall_block && trimmed.has_prefix("[")) {
-                    in_uninstall_block = false;
-                }
-                if (in_uninstall_block && trimmed.has_prefix("Exec=")) {
-                    var uninstall_exec = build_uninstall_exec(record.installed_path);
-                    builder.append("Exec=%s\n".printf(uninstall_exec));
-                    modified = true;
-                    continue;
-                }
-                builder.append(line + "\n");
-            }
-            if (modified) {
-                if (!GLib.FileUtils.set_contents(record.desktop_file, builder.str)) {
-                    throw new InstallerError.UNKNOWN("Unable to update desktop file");
-                }
+            
+            try {
+                var entry = new DesktopEntry(record.desktop_file);
+                var uninstall_exec = build_uninstall_exec(record.installed_path);
+                entry.set_action_group("Uninstall", I18n.tr("Move to Trash"), uninstall_exec, "user-trash");
+                entry.save();
+            } catch (Error e) {
+                warning("Failed to sanitize uninstall action for %s: %s", record.name, e.message);
             }
         }
     }

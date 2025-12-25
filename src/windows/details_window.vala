@@ -715,15 +715,9 @@ namespace AppManager {
             var props = new HashTable<string, string>(str_hash, str_equal);
             
             try {
-                var keyfile = new KeyFile();
-                keyfile.load_from_file(desktop_file_path, KeyFileFlags.NONE);
-                
-                // Only NoDisplay is not stored in InstallationRecord
-                try {
-                    var value = keyfile.get_string("Desktop Entry", "NoDisplay");
-                    props.set("NoDisplay", value);
-                } catch (Error e) {
-                    // Key doesn't exist, that's okay
+                var entry = new DesktopEntry(desktop_file_path);
+                if (entry.no_display) {
+                    props.set("NoDisplay", "true");
                 }
             } catch (Error e) {
                 warning("Failed to load desktop file %s: %s", desktop_file_path, e.message);
