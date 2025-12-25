@@ -386,7 +386,7 @@ namespace AppManager {
             var image = new Gtk.Image();
             image.set_pixel_size(64);
             image.halign = Gtk.Align.CENTER;
-            var record_icon = load_record_icon(record);
+            var record_icon = UiUtils.load_record_icon(record);
             if (record_icon != null) {
                 image.set_from_paintable(record_icon);
             } else {
@@ -422,7 +422,7 @@ namespace AppManager {
             var image = new Gtk.Image();
             image.set_pixel_size(64);
             image.halign = Gtk.Align.CENTER;
-            var record_icon = load_record_icon(record);
+            var record_icon = UiUtils.load_record_icon(record);
             if (record_icon != null) {
                 image.set_from_paintable(record_icon);
             } else {
@@ -483,21 +483,6 @@ namespace AppManager {
             return label;
         }
 
-        private Gdk.Paintable? load_record_icon(InstallationRecord record) {
-            if (record.icon_path == null || record.icon_path.strip() == "") {
-                return null;
-            }
-            try {
-                var file = File.new_for_path(record.icon_path);
-                if (file.query_exists()) {
-                    return Gdk.Texture.from_file(file);
-                }
-            } catch (Error e) {
-                warning("Failed to load existing icon: %s", e.message);
-            }
-            return null;
-        }
-
         private enum InstallIntent {
             NEW_INSTALL,
             UPDATE,
@@ -556,7 +541,7 @@ namespace AppManager {
             var image = new Gtk.Image();
             image.set_pixel_size(64);
             image.halign = Gtk.Align.CENTER;
-            var record_icon = load_record_icon(record);
+            var record_icon = UiUtils.load_record_icon(record);
             if (record_icon != null) {
                 image.set_from_paintable(record_icon);
             } else {

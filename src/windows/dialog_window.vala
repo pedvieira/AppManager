@@ -1,4 +1,5 @@
 using AppManager.Core;
+using AppManager.Utils;
 
 namespace AppManager {
     public class DialogWindow : Adw.Window {
@@ -100,28 +101,13 @@ namespace AppManager {
             var image = new Gtk.Image();
             image.set_pixel_size(64);
             image.halign = Gtk.Align.CENTER;
-            var paintable = load_record_icon(record);
+            var paintable = UiUtils.load_record_icon(record);
             if (paintable != null) {
                 image.set_from_paintable(paintable);
             } else {
                 image.set_from_icon_name("application-x-executable");
             }
             return image;
-        }
-
-        private static Gdk.Paintable? load_record_icon(InstallationRecord record) {
-            if (record.icon_path == null || record.icon_path.strip() == "") {
-                return null;
-            }
-            try {
-                var file = File.new_for_path(record.icon_path);
-                if (file.query_exists()) {
-                    return Gdk.Texture.from_file(file);
-                }
-            } catch (Error e) {
-                warning("Failed to load record icon: %s", e.message);
-            }
-            return null;
         }
 
         private static Gtk.Label create_wrapped_label(string text, bool use_markup = false) {

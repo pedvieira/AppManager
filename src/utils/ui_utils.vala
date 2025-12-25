@@ -1,6 +1,7 @@
 using Gtk;
 using Gdk;
 using Adw;
+using AppManager.Core;
 
 namespace AppManager.Utils {
     public class UiUtils {
@@ -233,6 +234,21 @@ namespace AppManager.Utils {
 
         private static double relative_luminance(Gdk.RGBA color) {
             return 0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue;
+        }
+
+        public static Gdk.Paintable? load_record_icon(InstallationRecord record) {
+            if (record.icon_path == null || record.icon_path.strip() == "") {
+                return null;
+            }
+            try {
+                var file = File.new_for_path(record.icon_path);
+                if (file.query_exists()) {
+                    return Gdk.Texture.from_file(file);
+                }
+            } catch (Error e) {
+                warning("Failed to load record icon: %s", e.message);
+            }
+            return null;
         }
     }
 }
