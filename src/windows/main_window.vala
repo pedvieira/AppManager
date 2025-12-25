@@ -70,29 +70,11 @@ namespace AppManager {
         }
 
         private void load_custom_css() {
+            // Shared card styles are maintained in UiUtils to avoid duplication.
+            UiUtils.ensure_app_card_styles();
+
             var provider = new Gtk.CssProvider();
             string css = """
-                .card.accent {
-                    background-color: @accent_bg_color;
-                    color: @accent_fg_color;
-                }
-                .card.accent label {
-                    color: @accent_fg_color;
-                }
-                .card.destructive {
-                    background-color: @destructive_bg_color;
-                    color: @destructive_fg_color;
-                }
-                .card.destructive label {
-                    color: @destructive_fg_color;
-                }
-                .card.terminal {
-                    background-color: #535252ff;
-                    color: #ffffff;
-                }
-                .card.terminal label {
-                    color: #ffffff;
-                }
                 .extracted-app .title > label {
                     color: @accent_color;
                     font-weight: bold;
@@ -1041,7 +1023,7 @@ namespace AppManager {
             var key = record_state_key(record);
             var has_update = pending_update_keys.contains(key);
             var is_updating = updating_records.contains(key);
-            var details_window = new DetailsWindow(record, registry, has_update);
+            var details_window = new DetailsWindow(record, registry, installer, has_update);
             if (is_updating) {
                 details_window.set_update_loading(true);
             }

@@ -85,6 +85,9 @@ Examples:
                 theme.add_resource_path("/com/github/AppManager/icons/hicolor");
             }
 
+            // Apply shared UI styles (cards/badges) once per app lifecycle.
+            UiUtils.ensure_app_card_styles();
+
             bg_update_service = new BackgroundUpdateService(settings, registry, installer);
             
             // Initialize directory monitoring for manual deletions
@@ -222,7 +225,9 @@ Examples:
                 }
             }
             if (file_list.size > 0) {
-                this.open(to_file_array(file_list), "");
+                var arr = new GLib.File[file_list.size];
+                for (int k = 0; k < file_list.size; k++) arr[k] = file_list.get(k);
+                this.open(arr, "");
                 return 0;
             }
 
@@ -361,14 +366,6 @@ Examples:
             dialog.add_response("close", I18n.tr("Close"));
             dialog.set_close_response("close");
             dialog.present(parent_window ?? main_window);
-        }
-
-        private GLib.File[] to_file_array(ArrayList<GLib.File> files) {
-            var result = new GLib.File[files.size];
-            for (int i = 0; i < files.size; i++) {
-                result[i] = files.get(i);
-            }
-            return result;
         }
 
         private InstallationRecord? locate_record(string target) {

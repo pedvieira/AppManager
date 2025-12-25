@@ -100,7 +100,7 @@ namespace AppManager.Core {
         private void install_portable(AppImageMetadata metadata, InstallationRecord record, bool is_upgrade) throws Error {
             progress("Preparing Applications folder…");
             record.installed_path = metadata.path;
-            finalize_desktop_and_icon(record, metadata, metadata.path, metadata.path, is_upgrade);
+            finalize_desktop_and_icon(record, metadata, metadata.path, metadata.path, is_upgrade, null);
         }
 
         private string? parse_bin_from_apprun(string apprun_path) {
@@ -234,12 +234,13 @@ namespace AppManager.Core {
             }
             
             record.installed_path = dest_dir;
-            finalize_desktop_and_icon(record, metadata, exec_target, metadata.path, is_upgrade);
+                finalize_desktop_and_icon(record, metadata, exec_target, metadata.path, is_upgrade, app_run);
         }
 
-        private void finalize_desktop_and_icon(InstallationRecord record, AppImageMetadata metadata, string exec_target, string appimage_for_assets, bool is_upgrade) throws Error {
+        private void finalize_desktop_and_icon(InstallationRecord record, AppImageMetadata metadata, string exec_target, string appimage_for_assets, bool is_upgrade, string? app_run_path) throws Error {
             string exec_path = exec_target.dup();
             string assets_path = appimage_for_assets.dup();
+            string? resolved_entry_exec = null;
             progress("Extracting desktop entry…");
             var temp_dir = Utils.FileUtils.create_temp_dir("appmgr-");
             try {
@@ -332,6 +333,11 @@ namespace AppManager.Core {
                     }
                     if (key_file.has_key("Desktop Entry", "Exec")) {
                         var exec_value = key_file.get_string("Desktop Entry", "Exec");
+                        var base_exec = extract_base_exec_token(exec_value);
+                        var normalized_exec = base_exec != null ? strip_appdir_prefix(base_exec) : null;
+                        if (normalized_exec != null && normalized_exec.strip() != "" && !is_apprun_token(normalized_exec)) {
+                            resolved_entry_exec = normalized_exec.strip();
+                        }
                         // Extract arguments (everything after first token)
                         var trimmed = exec_value.strip();
                         int first_space = -1;
@@ -346,6 +352,15 @@ namespace AppManager.Core {
                         }
                         if (first_space != -1) {
                             original_exec_args = trimmed.substring(first_space + 1).strip();
+                        }
+                        if ((resolved_entry_exec == null || resolved_entry_exec.strip() == "") && app_run_path != null && app_run_path.strip() != "") {
+                            var bin_name = parse_bin_from_apprun(app_run_path);
+                            if (bin_name != null && bin_name.strip() != "") {
+                                resolved_entry_exec = bin_name.strip();
+                            }
+                        }
+                        if ((resolved_entry_exec == null || resolved_entry_exec.strip() == "") && normalized_exec != null && is_apprun_token(normalized_exec)) {
+                            resolved_entry_exec = "AppRun";
                         }
                     }
                     if (key_file.has_key("Desktop Entry", "X-AppImage-Homepage")) {
@@ -428,6 +443,14 @@ namespace AppManager.Core {
                 record.desktop_file = desktop_destination;
                 record.icon_path = stored_icon;
                 
+                if (resolved_entry_exec != null && resolved_entry_exec.strip() != "") {
+                    var stored_exec = resolved_entry_exec.strip();
+                    if (record.mode == InstallMode.EXTRACTED && record.installed_path.strip() != "") {
+                        stored_exec = relativize_exec_to_installed(stored_exec, record.installed_path);
+                    }
+                    record.entry_exec = stored_exec;
+                }
+
                 // original_* values were already set above before get_effective_* calls
 
                 // Create symlink for terminal applications or if it's AppManager itself
@@ -443,7 +466,6 @@ namespace AppManager.Core {
                 Utils.FileUtils.remove_dir_recursive(temp_dir);
             }
         }
-
         public void uninstall(InstallationRecord record) throws Error {
             uninstall_sync(record);
         }
@@ -742,6 +764,63 @@ namespace AppManager.Core {
             return final_builder.str;
         }
 
+        private string? extract_base_exec_token(string exec_value) {
+            var trimmed = exec_value.strip();
+            if (trimmed == "") {
+                return null;
+            }
+
+            var builder = new StringBuilder();
+            bool in_quotes = false;
+            for (int i = 0; i < trimmed.length; i++) {
+                var ch = trimmed[i];
+                if (ch == '"') {
+                    in_quotes = !in_quotes;
+                    continue;
+                }
+                if (ch == ' ' && !in_quotes) {
+                    break;
+                }
+                builder.append_c(ch);
+            }
+
+            var token = builder.str.strip();
+            return token == "" ? null : token;
+        }
+
+        private string strip_appdir_prefix(string token) {
+            var value = token.strip();
+            value = value.replace("$APPDIR/", "").replace("${APPDIR}/", "");
+            value = value.replace("$APPDIR", "").replace("${APPDIR}", "");
+            while (value.has_prefix("/")) {
+                value = value.substring(1);
+            }
+            return value;
+        }
+
+        private bool is_apprun_token(string token) {
+            var base_name = Path.get_basename(token.strip());
+            var lower = base_name.down();
+            return lower == "apprun" || lower == "apprun.sh";
+        }
+
+        private string relativize_exec_to_installed(string exec_token, string installed_path) {
+            if (exec_token.strip() == "" || installed_path.strip() == "") {
+                return exec_token;
+            }
+            if (!Path.is_absolute(exec_token)) {
+                return exec_token;
+            }
+            var prefix = installed_path;
+            if (!prefix.has_suffix("/")) {
+                prefix = prefix + "/";
+            }
+            if (exec_token.has_prefix(prefix)) {
+                return exec_token.substring(prefix.length);
+            }
+            return exec_token;
+        }
+
         private void ensure_executable(string path) {
             if (Posix.chmod(path, 0755) != 0) {
                 warning("Failed to chmod %s", path);
@@ -962,6 +1041,212 @@ namespace AppManager.Core {
             } catch (Error e) {
                 warning("Failed to create symlink for %s: %s", slug, e.message);
                 return null;
+            }
+        }
+
+        public bool ensure_bin_symlink_for_record(InstallationRecord record, string exec_path, string slug) {
+            if (exec_path.strip() == "") {
+                return false;
+            }
+
+            var link = create_bin_symlink(exec_path, slug);
+            if (link == null) {
+                return false;
+            }
+
+            record.bin_symlink = link;
+            registry.persist(false);
+            return true;
+        }
+
+        /**
+         * Resolve the effective executable path for an installed record based on its desktop file.
+         * This mirrors the runtime resolution used when creating the desktop entry, but can be
+         * called later (e.g., from the Details window) without reimplementing parsing logic.
+         */
+        public string resolve_exec_path_for_record(InstallationRecord record) {
+            var installed_path = record.installed_path ?? "";
+            var stored_exec = record.entry_exec;
+
+            if (stored_exec != null && stored_exec.strip() != "") {
+                var token = stored_exec.strip();
+                if (Path.is_absolute(token)) {
+                    return token;
+                }
+                if (installed_path != "" && File.new_for_path(installed_path).query_file_type(FileQueryInfoFlags.NONE) == FileType.DIRECTORY) {
+                    return Path.build_filename(installed_path, token);
+                }
+            }
+
+            if (installed_path != "" && File.new_for_path(installed_path).query_file_type(FileQueryInfoFlags.NONE) != FileType.DIRECTORY) {
+                return installed_path;
+            }
+
+            string exec_value = "";
+
+            if (record.desktop_file != null && record.desktop_file.strip() != "") {
+                try {
+                    var keyfile = new KeyFile();
+                    keyfile.load_from_file(record.desktop_file, KeyFileFlags.NONE);
+                    exec_value = keyfile.get_string("Desktop Entry", "Exec");
+                } catch (Error e) {
+                    warning("Failed to read Exec from desktop file %s: %s", record.desktop_file, e.message);
+                }
+            }
+
+            return resolve_exec_path(exec_value, record);
+        }
+
+        private string resolve_exec_path(string exec_value, InstallationRecord record) {
+            var trimmed = exec_value.strip();
+            if (trimmed == "") {
+                return record.installed_path ?? "";
+            }
+
+            // Extract first token respecting quotes
+            bool in_quotes = false;
+            var builder = new StringBuilder();
+            for (int i = 0; i < trimmed.length; i++) {
+                var ch = trimmed[i];
+                if (ch == '"') {
+                    in_quotes = !in_quotes;
+                    continue;
+                }
+                if (ch == ' ' && !in_quotes) {
+                    break;
+                }
+                builder.append_c(ch);
+            }
+
+            var base_exec = builder.str.strip();
+            if (base_exec == "") {
+                return record.installed_path ?? "";
+            }
+
+            // If already absolute, return it
+            if (Path.is_absolute(base_exec)) {
+                return base_exec;
+            }
+
+            // If relative, resolve against installed_path when it is a directory
+            if (record.installed_path != null && File.new_for_path(record.installed_path).query_file_type(FileQueryInfoFlags.NONE) == FileType.DIRECTORY) {
+                return Path.build_filename(record.installed_path, base_exec);
+            }
+
+            // Fall back to the stored installed path or the token itself
+            return record.installed_path ?? base_exec;
+        }
+
+        public bool remove_bin_symlink_for_record(InstallationRecord record) {
+            if (record.bin_symlink == null || record.bin_symlink.strip() == "") {
+                return true;
+            }
+            try {
+                var file = File.new_for_path(record.bin_symlink);
+                if (file.query_exists()) {
+                    file.delete(null);
+                    debug("Removed symlink: %s", record.bin_symlink);
+                }
+                record.bin_symlink = null;
+                registry.persist(false);
+                return true;
+            } catch (Error e) {
+                warning("Failed to remove symlink for %s: %s", record.name, e.message);
+                return false;
+            }
+        }
+
+        /**
+         * Rewrites an installed record's desktop file to reflect the record's effective values
+         * (custom values and cleared values). This centralizes desktop entry edits that used to
+         * be scattered across the UI.
+         */
+        public void apply_record_customizations_to_desktop(InstallationRecord record) {
+            if (record.desktop_file == null || record.desktop_file.strip() == "") {
+                return;
+            }
+
+            var desktop_path = record.desktop_file;
+            if (!File.new_for_path(desktop_path).query_exists()) {
+                return;
+            }
+
+            bool is_terminal = false;
+            try {
+                var keyfile = new KeyFile();
+                keyfile.load_from_file(desktop_path, KeyFileFlags.NONE);
+                if (keyfile.has_key("Desktop Entry", "Terminal")) {
+                    is_terminal = keyfile.get_boolean("Desktop Entry", "Terminal");
+                }
+            } catch (Error e) {
+                // If we fail to parse Terminal, treat as non-terminal.
+                is_terminal = false;
+            }
+
+            var exec_target = resolve_exec_path_for_record(record);
+
+            var effective_icon = record.get_effective_icon_name();
+            var effective_keywords = record.get_effective_keywords();
+            var effective_wmclass = record.get_effective_startup_wm_class();
+            var effective_args = record.get_effective_commandline_args();
+            var effective_update_link = record.get_effective_update_link();
+            var effective_web_page = record.get_effective_web_page();
+
+            try {
+                var new_contents = rewrite_desktop(
+                    desktop_path,
+                    exec_target,
+                    record,
+                    is_terminal,
+                    "",
+                    false,
+                    effective_icon,
+                    effective_keywords,
+                    effective_wmclass,
+                    effective_args,
+                    effective_update_link,
+                    effective_web_page
+                );
+
+                if (!GLib.FileUtils.set_contents(desktop_path, new_contents)) {
+                    warning("Failed to write updated desktop file: %s", desktop_path);
+                }
+            } catch (Error e) {
+                warning("Failed to rewrite desktop file %s: %s", desktop_path, e.message);
+            }
+        }
+
+        /**
+         * Updates a single key inside the [Desktop Entry] group.
+         * If value is empty, the key is removed (except Exec, which is preserved).
+         */
+        public void set_desktop_entry_property(string desktop_file_path, string key, string value) {
+            if (desktop_file_path == null || desktop_file_path.strip() == "") {
+                return;
+            }
+
+            try {
+                var keyfile = new KeyFile();
+                keyfile.load_from_file(desktop_file_path, KeyFileFlags.KEEP_COMMENTS | KeyFileFlags.KEEP_TRANSLATIONS);
+
+                if (value.strip() == "") {
+                    if (key != "Exec") {
+                        try {
+                            keyfile.remove_key("Desktop Entry", key);
+                        } catch (Error e) {
+                            // Key may not exist
+                        }
+                    } else {
+                        keyfile.set_string("Desktop Entry", key, value);
+                    }
+                } else {
+                    keyfile.set_string("Desktop Entry", key, value);
+                }
+
+                var data = keyfile.to_data();
+                GLib.FileUtils.set_contents(desktop_file_path, data);
+            } catch (Error e) {
+                warning("Failed to update desktop file %s: %s", desktop_file_path, e.message);
             }
         }
 

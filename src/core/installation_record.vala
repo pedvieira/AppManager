@@ -30,6 +30,7 @@ namespace AppManager.Core {
         public string? original_startup_wm_class { get; set; }
         public string? original_update_link { get; set; }
         public string? original_web_page { get; set; }
+        public string? entry_exec { get; set; }
         
         // Custom values set by user (null means use original, CLEARED_VALUE means user cleared it, other means user set custom value)
         public string? custom_commandline_args { get; set; }
@@ -120,6 +121,8 @@ namespace AppManager.Core {
             builder.add_string_value(etag ?? "");
             builder.set_member_name("last_release_tag");
             builder.add_string_value(last_release_tag ?? "");
+            builder.set_member_name("entry_exec");
+            builder.add_string_value(entry_exec ?? "");
             
             // Original values from AppImage's .desktop
             builder.set_member_name("original_commandline_args");
@@ -226,6 +229,8 @@ namespace AppManager.Core {
             record.etag = etag == "" ? null : etag;
             var last_release_tag = obj.get_string_member_with_default("last_release_tag", "");
             record.last_release_tag = last_release_tag == "" ? null : last_release_tag;
+            var entry_exec = obj.get_string_member_with_default("entry_exec", "");
+            record.entry_exec = entry_exec == "" ? null : entry_exec;
             
             // Original values from AppImage's .desktop
             var original_commandline_args = obj.get_string_member_with_default("original_commandline_args", "");

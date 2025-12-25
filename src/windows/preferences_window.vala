@@ -1,4 +1,5 @@
 using AppManager.Core;
+using AppManager.Utils;
 
 namespace AppManager {
     public class PreferencesDialog : Adw.PreferencesDialog {
@@ -110,7 +111,7 @@ namespace AppManager {
             pkgforge_row.activatable = true;
             pkgforge_row.add_suffix(new Gtk.Image.from_icon_name("external-link-symbolic"));
             pkgforge_row.activated.connect(() => {
-                open_url("https://pkgforge-dev.github.io/Anylinux-AppImages/");
+                UiUtils.open_url("https://pkgforge-dev.github.io/Anylinux-AppImages/");
             });
             links_group.add(pkgforge_row);
 
@@ -120,7 +121,7 @@ namespace AppManager {
             appimagehub_row.activatable = true;
             appimagehub_row.add_suffix(new Gtk.Image.from_icon_name("external-link-symbolic"));
             appimagehub_row.activated.connect(() => {
-                open_url("https://www.appimagehub.com/");
+                UiUtils.open_url("https://www.appimagehub.com/");
             });
             links_group.add(appimagehub_row);
 
@@ -130,7 +131,7 @@ namespace AppManager {
             appimage_catalog_row.activatable = true;
             appimage_catalog_row.add_suffix(new Gtk.Image.from_icon_name("external-link-symbolic"));
             appimage_catalog_row.activated.connect(() => {
-                open_url("https://appimage.github.io/");
+                UiUtils.open_url("https://appimage.github.io/");
             });
             links_group.add(appimage_catalog_row);
 
@@ -203,7 +204,7 @@ X-GNOME-Autostart-enabled=true
 NoDisplay=true
 X-XDP-Autostart=com.github.AppManager
 """.printf(exec_path);
-                    FileUtils.set_contents(autostart_file, content);
+                    GLib.FileUtils.set_contents(autostart_file, content);
                     debug("Created autostart file: %s", autostart_file);
                 } catch (Error e) {
                     warning("Failed to write autostart file: %s", e.message);
@@ -250,12 +251,5 @@ X-XDP-Autostart=com.github.AppManager
             }
         }
 
-        private void open_url(string url) {
-            try {
-                AppInfo.launch_default_for_uri(url, null);
-            } catch (Error e) {
-                warning("Failed to open URL %s: %s", url, e.message);
-            }
-        }
     }
 }

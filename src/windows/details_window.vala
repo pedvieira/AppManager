@@ -5,21 +5,24 @@ namespace AppManager {
     public class DetailsWindow : Adw.NavigationPage {
         private InstallationRecord record;
         private InstallationRegistry registry;
+        private Installer installer;
         private bool update_available;
         private bool update_loading = false;
         private Gtk.Button? update_button;
         private Gtk.Spinner? update_spinner;
         private Gtk.Button? extract_button;
+        private const string LOCAL_BIN_DIR = ".local/bin";
         
         public signal void uninstall_requested(InstallationRecord record);
         public signal void update_requested(InstallationRecord record);
         public signal void check_update_requested(InstallationRecord record);
         public signal void extract_requested(InstallationRecord record);
 
-        public DetailsWindow(InstallationRecord record, InstallationRegistry registry, bool update_available = false) {
+        public DetailsWindow(InstallationRecord record, InstallationRegistry registry, Installer installer, bool update_available = false) {
             Object(title: record.name, tag: record.id);
             this.record = record;
             this.registry = registry;
+            this.installer = installer;
             this.update_available = update_available;
             this.can_pop = true;
             
@@ -38,6 +41,11 @@ namespace AppManager {
         public void set_update_loading(bool loading) {
             update_loading = loading;
             refresh_update_button();
+        }
+
+        private void persist_record_and_refresh_desktop() {
+            registry.update(record);
+            installer.apply_record_customizations_to_desktop(record);
         }
 
         private void build_ui() {
@@ -81,6 +89,8 @@ namespace AppManager {
             
             // Load desktop file properties early for Terminal and NoDisplay checks
             var desktop_props = load_desktop_file_properties(record.desktop_file);
+            var exec_from_desktop = desktop_props.get("Exec") ?? "";
+            var exec_path = installer.resolve_exec_path_for_record(record);
             
             // Cards group - adding box directly without PreferencesRow wrapper
             var cards_group = new Adw.PreferencesGroup();
@@ -142,7 +152,6 @@ namespace AppManager {
             props_group.title = I18n.tr("Properties");
             
             // Extract current values from desktop file
-            var exec_from_desktop = desktop_props.get("Exec") ?? "";
             var current_args = extract_exec_args(exec_from_desktop);
             var current_icon = desktop_props.get("Icon") ?? "";
             var current_keywords = desktop_props.get("Keywords") ?? "";
@@ -162,10 +171,9 @@ namespace AppManager {
             restore_exec_button.clicked.connect(() => {
                 // Undo: clear custom, restore original to .desktop
                 record.custom_commandline_args = null;
-                registry.register(record);
                 var original_val = record.original_commandline_args ?? "";
                 exec_row.text = original_val;
-                update_desktop_file_property(record.desktop_file, "Exec", build_exec_with_args(exec_from_desktop, original_val));
+                persist_record_and_refresh_desktop();
                 restore_exec_button.set_visible(false);
             });
             exec_row.add_suffix(restore_exec_button);
@@ -184,9 +192,7 @@ namespace AppManager {
                     // Custom value set
                     record.custom_commandline_args = new_val;
                 }
-                registry.register(record);
-                // Update .desktop file
-                update_desktop_file_property(record.desktop_file, "Exec", build_exec_with_args(exec_from_desktop, exec_row.text));
+                persist_record_and_refresh_desktop();
                 restore_exec_button.set_visible(record.custom_commandline_args != null);
             });
             props_group.add(exec_row);
@@ -205,10 +211,9 @@ namespace AppManager {
             restore_webpage_button.clicked.connect(() => {
                 // Undo: clear custom, restore original to .desktop
                 record.custom_web_page = null;
-                registry.register(record);
                 var original_val = record.original_web_page ?? "";
                 webpage_row.text = original_val;
-                update_desktop_file_property(record.desktop_file, "X-AppImage-Homepage", original_val);
+                persist_record_and_refresh_desktop();
                 restore_webpage_button.set_visible(false);
             });
             webpage_row.add_suffix(restore_webpage_button);
@@ -227,8 +232,7 @@ namespace AppManager {
                     // Custom value set
                     record.custom_web_page = new_val;
                 }
-                registry.register(record);
-                update_desktop_file_property(record.desktop_file, "X-AppImage-Homepage", new_val);
+                persist_record_and_refresh_desktop();
                 restore_webpage_button.set_visible(record.custom_web_page != null);
             });
             
@@ -259,10 +263,9 @@ namespace AppManager {
             restore_update_button.clicked.connect(() => {
                 // Undo: clear custom, restore original to .desktop
                 record.custom_update_link = null;
-                registry.register(record);
                 var original_val = record.original_update_link ?? "";
                 update_row.text = original_val;
-                update_desktop_file_property(record.desktop_file, "X-AppImage-UpdateURL", original_val);
+                persist_record_and_refresh_desktop();
                 restore_update_button.set_visible(false);
             });
             update_row.add_suffix(restore_update_button);
@@ -292,8 +295,7 @@ namespace AppManager {
                     // Custom value set
                     record.custom_update_link = new_val;
                 }
-                registry.register(record);
-                update_desktop_file_property(record.desktop_file, "X-AppImage-UpdateURL", new_val);
+                persist_record_and_refresh_desktop();
                 restore_update_button.set_visible(record.custom_update_link != null);
             });
             update_row.add_controller(focus_controller);
@@ -321,8 +323,7 @@ namespace AppManager {
                     // Custom value set
                     record.custom_update_link = new_val;
                 }
-                registry.register(record);
-                update_desktop_file_property(record.desktop_file, "X-AppImage-UpdateURL", new_val);
+                persist_record_and_refresh_desktop();
                 restore_update_button.set_visible(record.custom_update_link != null);
             });
             
@@ -360,10 +361,9 @@ namespace AppManager {
             restore_keywords_button.clicked.connect(() => {
                 // Undo: clear custom, restore original to .desktop
                 record.custom_keywords = null;
-                registry.register(record);
                 var original_val = record.original_keywords ?? "";
                 keywords_row.text = original_val;
-                update_desktop_file_property(record.desktop_file, "Keywords", original_val);
+                persist_record_and_refresh_desktop();
                 restore_keywords_button.set_visible(false);
             });
             keywords_row.add_suffix(restore_keywords_button);
@@ -382,9 +382,7 @@ namespace AppManager {
                     // Custom value set
                     record.custom_keywords = new_val;
                 }
-                registry.register(record);
-                // Update .desktop file
-                update_desktop_file_property(record.desktop_file, "Keywords", new_val);
+                persist_record_and_refresh_desktop();
                 restore_keywords_button.set_visible(record.custom_keywords != null);
             });
             advanced_group.add_row(keywords_row);
@@ -403,10 +401,9 @@ namespace AppManager {
             restore_icon_button.clicked.connect(() => {
                 // Undo: clear custom, restore original to .desktop
                 record.custom_icon_name = null;
-                registry.register(record);
                 var original_val = record.original_icon_name ?? "";
                 icon_row.text = original_val;
-                update_desktop_file_property(record.desktop_file, "Icon", original_val);
+                persist_record_and_refresh_desktop();
                 restore_icon_button.set_visible(false);
             });
             icon_row.add_suffix(restore_icon_button);
@@ -425,9 +422,7 @@ namespace AppManager {
                     // Custom value set
                     record.custom_icon_name = new_val;
                 }
-                registry.register(record);
-                // Update .desktop file
-                update_desktop_file_property(record.desktop_file, "Icon", new_val);
+                persist_record_and_refresh_desktop();
                 restore_icon_button.set_visible(record.custom_icon_name != null);
             });
             advanced_group.add_row(icon_row);
@@ -446,10 +441,9 @@ namespace AppManager {
             restore_wmclass_button.clicked.connect(() => {
                 // Undo: clear custom, restore original to .desktop
                 record.custom_startup_wm_class = null;
-                registry.register(record);
                 var original_val = record.original_startup_wm_class ?? "";
                 wmclass_row.text = original_val;
-                update_desktop_file_property(record.desktop_file, "StartupWMClass", original_val);
+                persist_record_and_refresh_desktop();
                 restore_wmclass_button.set_visible(false);
             });
             wmclass_row.add_suffix(restore_wmclass_button);
@@ -468,9 +462,7 @@ namespace AppManager {
                     // Custom value set
                     record.custom_startup_wm_class = new_val;
                 }
-                registry.register(record);
-                // Update .desktop file
-                update_desktop_file_property(record.desktop_file, "StartupWMClass", new_val);
+                persist_record_and_refresh_desktop();
                 restore_wmclass_button.set_visible(record.custom_startup_wm_class != null);
             });
             advanced_group.add_row(wmclass_row);
@@ -481,8 +473,8 @@ namespace AppManager {
             version_row.text = record.version ?? "";
             version_row.changed.connect(() => {
                 record.version = version_row.text.strip() == "" ? null : version_row.text;
-                registry.register(record);
-                update_desktop_file_property(record.desktop_file, "X-AppImage-Version", record.version ?? "");
+                registry.update(record);
+                installer.set_desktop_entry_property(record.desktop_file, "X-AppImage-Version", record.version ?? "");
             });
             advanced_group.add_row(version_row);
             
@@ -493,9 +485,60 @@ namespace AppManager {
             var nodisplay_current = desktop_props.get("NoDisplay") ?? "false";
             nodisplay_row.active = (nodisplay_current.down() == "true");
             nodisplay_row.notify["active"].connect(() => {
-                update_desktop_file_property(record.desktop_file, "NoDisplay", nodisplay_row.active ? "true" : "false");
+                installer.set_desktop_entry_property(record.desktop_file, "NoDisplay", nodisplay_row.active ? "true" : "false");
             });
             advanced_group.add_row(nodisplay_row);
+
+            // Add to PATH toggle (symlink into ~/.local/bin)
+            var path_row = new Adw.SwitchRow();
+            path_row.title = I18n.tr("Add to $PATH");
+            path_row.subtitle = I18n.tr("Create a launcher in ~/.local/bin so you can run it from the terminal");
+
+            var symlink_name = Path.get_basename(exec_path);
+            if (symlink_name.strip() == "" && record.installed_path != null) {
+                symlink_name = Path.get_basename(record.installed_path);
+            }
+
+            bool is_terminal_app = (desktop_props.get("Terminal") ?? "false").down() == "true";
+            bool symlink_exists = record.bin_symlink != null && record.bin_symlink.strip() != "" && File.new_for_path(record.bin_symlink).query_exists();
+
+            // Terminal apps must always stay on PATH; ensure the symlink exists using Installer helper
+            if (is_terminal_app && !symlink_exists) {
+                if (installer.ensure_bin_symlink_for_record(record, exec_path, symlink_name)) {
+                    symlink_exists = true;
+                }
+            }
+
+            // Clean up stale metadata if the recorded symlink is gone
+            if (!is_terminal_app && record.bin_symlink != null && !symlink_exists) {
+                installer.remove_bin_symlink_for_record(record);
+            }
+
+            path_row.active = is_terminal_app || symlink_exists;
+            path_row.sensitive = !is_terminal_app;
+
+            path_row.notify["active"].connect(() => {
+                // Ignore programmatic changes for terminal apps
+                if (is_terminal_app) {
+                    path_row.active = true;
+                    return;
+                }
+
+                if (path_row.active) {
+                    if (installer.ensure_bin_symlink_for_record(record, exec_path, symlink_name)) {
+                        symlink_exists = true;
+                    } else {
+                        path_row.active = false;
+                    }
+                } else {
+                    if (installer.remove_bin_symlink_for_record(record)) {
+                        symlink_exists = false;
+                    } else {
+                        path_row.active = true;
+                    }
+                }
+            });
+            advanced_group.add_row(path_row);
             
             detail_page.add(props_group);
             detail_page.add(update_group);
@@ -576,7 +619,17 @@ namespace AppManager {
             var toolbar = new Adw.ToolbarView();
             var header = new Adw.HeaderBar();
             toolbar.add_top_bar(header);
-            toolbar.set_content(detail_page);
+
+            var content_box = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
+
+            if (!path_contains_local_bin()) {
+                var banner = new Adw.Banner(I18n.tr("Add ~/.local/bin to PATH so Add to $PATH works from the terminal."));
+                banner.set_revealed(true);
+                content_box.append(banner);
+            }
+
+            content_box.append(detail_page);
+            toolbar.set_content(content_box);
             this.child = toolbar;
         }
 
@@ -657,20 +710,12 @@ namespace AppManager {
                 
                 // Add icon size if exists
                 if (record.icon_path != null && record.icon_path != "") {
-                    var icon_file = File.new_for_path(record.icon_path);
-                    if (icon_file.query_exists()) {
-                        var info = icon_file.query_info(FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
-                        total_size += info.get_size();
-                    }
+                    total_size += AppManager.Utils.FileUtils.get_path_size(record.icon_path);
                 }
                 
                 // Add desktop file size
                 if (record.desktop_file != null && record.desktop_file != "") {
-                    var desktop_file = File.new_for_path(record.desktop_file);
-                    if (desktop_file.query_exists()) {
-                        var info = desktop_file.query_info(FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
-                        total_size += info.get_size();
-                    }
+                    total_size += AppManager.Utils.FileUtils.get_path_size(record.desktop_file);
                 }
             } catch (Error e) {
                 warning("Failed to calculate size for %s: %s", record.name, e.message);
@@ -739,70 +784,6 @@ namespace AppManager {
             return trimmed.substring(first_space + 1).strip();
         }
         
-        // Build Exec value with new args, preserving the executable path
-        private string build_exec_with_args(string current_exec, string new_args) {
-            var trimmed = current_exec.strip();
-            if (trimmed.length == 0) {
-                return "";
-            }
-            
-            // Find the base executable (first token)
-            int first_space = -1;
-            bool in_quotes = false;
-            for (int i = 0; i < trimmed.length; i++) {
-                if (trimmed[i] == '"') {
-                    in_quotes = !in_quotes;
-                } else if (trimmed[i] == ' ' && !in_quotes) {
-                    first_space = i;
-                    break;
-                }
-            }
-            
-            string base_exec;
-            if (first_space == -1) {
-                base_exec = trimmed;
-            } else {
-                base_exec = trimmed.substring(0, first_space);
-            }
-            
-            if (new_args.strip() != "") {
-                return "%s %s".printf(base_exec, new_args);
-            } else {
-                return base_exec;
-            }
-        }
-        
-        private void update_desktop_file_property(string desktop_file_path, string key, string value) {
-            try {
-                var keyfile = new KeyFile();
-                keyfile.load_from_file(desktop_file_path, KeyFileFlags.KEEP_COMMENTS | KeyFileFlags.KEEP_TRANSLATIONS);
-                
-                if (value.strip() == "") {
-                    // Remove key if value is empty - Linux Desktop treats empty values as values
-                    // Exception: Exec should always be kept (never remove the executable line)
-                    if (key != "Exec") {
-                        try {
-                            keyfile.remove_key("Desktop Entry", key);
-                            debug("Removed desktop file property %s (value was empty)", key);
-                        } catch (Error e) {
-                            // Key might not exist, that's fine
-                        }
-                    } else {
-                        keyfile.set_string("Desktop Entry", key, value);
-                    }
-                } else {
-                    keyfile.set_string("Desktop Entry", key, value);
-                }
-                
-                // Save the file
-                var data = keyfile.to_data();
-                GLib.FileUtils.set_contents(desktop_file_path, data);
-                debug("Updated desktop file property %s = %s", key, value);
-            } catch (Error e) {
-                warning("Failed to update desktop file %s: %s", desktop_file_path, e.message);
-            }
-        }
-
         private void present_extract_warning() {
             var body = I18n.tr("Extracting will unpack the application so it opens faster, but it will consume more disk space. This action cannot be reversed automatically.");
             var dialog = new Adw.AlertDialog(I18n.tr("Extract application?"), body);
@@ -818,5 +799,17 @@ namespace AppManager {
             });
             dialog.present(this);
         }
+
+        private bool path_contains_local_bin() {
+            var path_env = Environment.get_variable("PATH") ?? "";
+            var home_bin = Path.build_filename(Environment.get_home_dir(), LOCAL_BIN_DIR);
+            foreach (var segment in path_env.split(":")) {
+                if (segment.strip() == home_bin) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
     }
 }
