@@ -756,29 +756,62 @@ namespace AppManager {
 
         private bool path_contains_local_bin() {
             var home_bin = AppPaths.local_bin_dir;
-            var local_bin_suffix = "/" + LOCAL_BIN_DIRNAME;
+            var home_bin_file = File.new_for_path(home_bin);
             
-            // Use user's actual shell to check PATH
-            var shell = Environment.get_variable("SHELL") ?? "/bin/sh";
+            // 1. Check current environment PATH
+            var path_env = Environment.get_variable("PATH") ?? "";
+            if (check_path_string(path_env, home_bin, home_bin_file)) {
+                return true;
+            }
             
+            // 2. Fallback: Try to get PATH from user's shell
             try {
+                string shell = Environment.get_variable("SHELL");
+                if (shell == null || shell == "") {
+                    shell = "/bin/sh";
+                }
+                
                 string std_out;
+                string std_err;
                 int exit_status;
-                string[] argv = { shell, "-l", "-c", "echo $PATH" };
-                Process.spawn_sync(null, argv, null, SpawnFlags.SEARCH_PATH, null, out std_out, null, out exit_status);
+                
+                // Use interactive login shell to ensure we get the full user configuration
+                // (sources .bashrc, .zshrc, .profile, etc.)
+                string[] argv = { shell, "-i", "-l", "-c", "echo $PATH" };
+                
+                Process.spawn_sync(null, argv, null, SpawnFlags.SEARCH_PATH, null, out std_out, out std_err, out exit_status);
                 
                 if (exit_status == 0 && std_out != null) {
-                    foreach (var segment in std_out.split(":")) {
-                        var clean = segment.strip();
-                        if (clean == home_bin || clean.has_suffix(local_bin_suffix)) {
-                            return true;
-                        }
+                    if (check_path_string(std_out, home_bin, home_bin_file)) {
+                        return true;
                     }
                 }
             } catch (Error e) {
-                // Fallback failed, assume not configured
+                warning("Failed to probe shell PATH: %s", e.message);
             }
             
+            return false;
+        }
+
+        private bool check_path_string(string path_str, string home_bin, File home_bin_file) {
+            foreach (var segment in path_str.split(":")) {
+                var clean_segment = segment.strip();
+                if (clean_segment == "") {
+                    continue;
+                }
+                
+                if (clean_segment == home_bin) {
+                    return true;
+                }
+                
+                try {
+                    if (File.new_for_path(clean_segment).equal(home_bin_file)) {
+                        return true;
+                    }
+                } catch (Error e) {
+                    // Ignore errors during path comparison
+                }
+            }
             return false;
         }
 
