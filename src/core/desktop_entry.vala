@@ -49,16 +49,11 @@ namespace AppManager.Core {
             // X-AppImage keys
             appimage_homepage = get_string("X-AppImage-Homepage");
             appimage_update_url = get_string("X-AppImage-UpdateURL");
-            appimage_version = get_string("X-AppImage-Version");
+            appimage_version = get_string("X-AppImage-Version") ?? find_key_in_any_group("X-AppImage-Version");
             
-            // Fallback for version if standard Version is missing but X-AppImage-Version exists
-            if (version == null && appimage_version != null) {
+            // Prefer X-AppImage-Version over Version field for actual app version
+            if (appimage_version != null && appimage_version.strip() != "") {
                 version = appimage_version;
-            }
-            
-            // Some AppImages place X-AppImage-Version in other groups or at the end
-            if (version == null) {
-                version = find_key_in_any_group("X-AppImage-Version");
             }
         }
 
