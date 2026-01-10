@@ -12,22 +12,22 @@
 AppManager is a GTK/Libadwaita developed desktop utility in Vala that makes installing and uninstalling AppImages on Linux desktop painless. Double-click any `.AppImage` to open a macOS-style drag-and-drop window, just drag to install and AppManager will move the app, wire up desktop entries, and copy icons.
 
 
-<img width="503" height="320" alt="Screenshot From 2025-11-22 11-30-42" src="https://github.com/user-attachments/assets/ddd36694-b38d-452d-a5eb-8bca1c329a1f" />
 
 
 ## Features
 
-- **Drag-and-drop installer** - mimics the familiar macOS Applications install flow.
-- **Smart install modes** - can choose between portable (move the AppImage) and extracted (unpack to `~/Applications/.installed/AppRun`) while letting you override it.
-- **Desktop integration** - extracts the bundled `.desktop` file via `7z` or `dwarfs`, rewrites `Exec` and `Icon`, and stores it in `~/.local/share/applications`.
-- **Simple uninstall** - right click in app drawer and choose `Move to Trash`, can uninstall in AppManager or simply delete from `~/Applications` folder.
-- **Install registry + preferences** - main window lists installed apps, default mode, and cleanup behaviors, all stored with GSettings.
-- **Background update checks** - optional portal-backed checks with user-granted permission, interval control, and a notification when updates are found.
+- **Drag-and-drop installer**: Mimics the familiar macOS Applications install flow.
+- **Smart install modes**: Can choose between portable (move the AppImage) and extracted (unpack to `~/Applications/.installed/AppRun`) while letting you override it.
+- **Desktop integration**: Extracts the bundled `.desktop` file via `7z` or `dwarfs`, rewrites `Exec` and `Icon`, and stores it in `~/.local/share/applications`.
+- **Simple uninstall**: Right click in app drawer and choose `Move to Trash`, can uninstall in AppManager or simply delete from `~/Applications` folder.
+- **Install registry + preferences**: Main window lists installed apps, default mode, and cleanup behaviors, all stored with GSettings.
+- **Auto update apps**: Automaticaly update apps from github, gitlab or from direct links. Simply add download URL.
+- **Background update checks**: Optional portal-backed checks with user-granted permission, interval control, and a notification when updates are found.
 
 ## Requirements
 
 - `valac`, `meson`, `ninja`
-- Libraries: `libadwaita-1`, `gtk4`, `gio-2.0`, `glib-2.0`, `json-glib-1.0`, `gee-0.8`, `libsoup-3.0`, `libportal` (>= 0.6), `libportal-gtk4` (>= 0.6)
+- Libraries: `libadwaita-1` (>= 1.5),, `gtk4`, `gio-2.0`, `glib-2.0`, `json-glib-1.0`, `gee-0.8`, `libsoup-3.0`, `libportal` (>= 0.6), `libportal-gtk4` (>= 0.6)
 - Runtime tools: `7z`/`p7zip-full`, `dwarfs`, `dwarfsextract`
 
 ## Install
