@@ -22,9 +22,11 @@ namespace AppManager {
         private Adw.NavigationView navigation_view;
         private Adw.ToastOverlay toast_overlay;
         private Gtk.Button? update_button;
+        private Gtk.Button? cancel_button;
         private Gtk.Label? update_button_label_widget;
         private Gtk.Spinner? update_button_spinner_widget;
         private UpdateWorkflowState update_state = UpdateWorkflowState.READY_TO_CHECK;
+        private GLib.Cancellable? update_cancellable;
         private Gee.HashSet<string> pending_update_keys;
         private Gee.HashMap<string, string> record_size_cache;
         private Gee.HashSet<string> updating_records;
@@ -612,8 +614,19 @@ namespace AppManager {
                 update_button.clicked.connect(handle_update_button_clicked);
                 set_update_button_state(UpdateWorkflowState.READY_TO_CHECK);
             }
+            if (cancel_button == null) {
+                cancel_button = new Gtk.Button();
+                cancel_button.set_icon_name("process-stop-symbolic");
+                cancel_button.set_tooltip_text(I18n.tr("Cancel update"));
+                cancel_button.add_css_class("flat");
+                cancel_button.set_visible(false);
+                cancel_button.clicked.connect(handle_cancel_clicked);
+            }
             if (update_button.get_parent() == null) {
                 header.pack_end(update_button);
+            }
+            if (cancel_button.get_parent() == null) {
+                header.pack_end(cancel_button);
             }
         }
 
@@ -632,7 +645,18 @@ namespace AppManager {
             }
         }
 
+        private void handle_cancel_clicked() {
+            if (update_cancellable != null && !update_cancellable.is_cancelled()) {
+                update_cancellable.cancel();
+                add_toast(I18n.tr("Cancelling..."));
+                if (cancel_button != null) {
+                    cancel_button.set_sensitive(false);
+                }
+            }
+        }
+
         private void start_update_check() {
+            update_cancellable = new GLib.Cancellable();
             set_update_button_state(UpdateWorkflowState.CHECKING);
             start_update_check_async.begin();
         }
@@ -640,13 +664,20 @@ namespace AppManager {
         private async void start_update_check_async() {
             SourceFunc callback = start_update_check_async.callback;
             Gee.ArrayList<UpdateProbeResult>? probes = null;
+            var cancellable = update_cancellable;
 
             new Thread<void>("appmgr-check-updates", () => {
-                probes = updater.probe_updates();
+                probes = updater.probe_updates(cancellable);
                 Idle.add((owned) callback);
             });
 
             yield;
+
+            if (cancellable != null && cancellable.is_cancelled()) {
+                add_toast(I18n.tr("Update check cancelled"));
+                set_update_button_state(UpdateWorkflowState.READY_TO_CHECK);
+                return;
+            }
 
             if (probes != null) {
                 handle_probe_results(probes);
@@ -680,6 +711,7 @@ namespace AppManager {
                 return;
             }
 
+            update_cancellable = new GLib.Cancellable();
             set_update_button_state(UpdateWorkflowState.UPDATING);
             foreach (var key in pending_update_keys) {
                 updating_records.add(key);
@@ -691,13 +723,22 @@ namespace AppManager {
         private async void start_update_install_async() {
             SourceFunc callback = start_update_install_async.callback;
             Gee.ArrayList<UpdateResult>? results = null;
+            var cancellable = update_cancellable;
 
             new Thread<void>("appmgr-update", () => {
-                results = updater.update_all();
+                results = updater.update_all(cancellable);
                 Idle.add((owned) callback);
             });
 
             yield;
+
+            if (cancellable != null && cancellable.is_cancelled()) {
+                add_toast(I18n.tr("Update cancelled"));
+                updating_records.clear();
+                refresh_installations();
+                update_global_update_state_from_pending();
+                return;
+            }
 
             if (results != null) {
                 handle_update_results(results);
@@ -796,6 +837,12 @@ namespace AppManager {
 
             var busy = (state == UpdateWorkflowState.CHECKING || state == UpdateWorkflowState.UPDATING);
             update_update_button_sensitive(busy);
+
+            // Show/hide cancel button
+            if (cancel_button != null) {
+                cancel_button.set_visible(busy);
+                cancel_button.set_sensitive(busy);
+            }
 
             if (busy) {
                 update_button_spinner_widget.set_visible(true);
