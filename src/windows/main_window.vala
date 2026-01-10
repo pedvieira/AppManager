@@ -53,7 +53,7 @@ namespace AppManager {
             this.updating_records = new Gee.HashSet<string>();
             this.active_details_window = null;
             this.app_rows = new Gee.ArrayList<Adw.PreferencesRow>();
-            add_css_class("devel");
+            //add_css_class("devel");
             this.set_default_size(settings.get_int("window-width"), settings.get_int("window-height"));
             build_ui();
             setup_window_actions();
