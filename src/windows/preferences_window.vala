@@ -5,7 +5,8 @@ namespace AppManager {
     public class PreferencesDialog : Adw.PreferencesDialog {
         private GLib.Settings settings;
         private int[] update_interval_options = { 86400, 604800, 2592000 };
-        private Adw.SwitchRow? auto_check_row = null;
+        private Adw.ExpanderRow? auto_check_expander = null;
+        private Adw.SwitchRow? auto_update_row = null;
         private Adw.ComboRow? interval_row = null;
         private const string GTK_CONFIG_SUBDIR = "gtk-4.0";
         private const string APP_CSS_FILENAME = "AppManager.css";
@@ -22,27 +23,14 @@ namespace AppManager {
             Object();
             this.settings = settings;
             this.set_title(I18n.tr("Preferences"));
-            this.content_height = 660;
+            this.content_height = 700;
             build_ui();
         }
 
         private void build_ui() {
             var page = new Adw.PreferencesPage();
 
-            var thumbnails_group = new Adw.PreferencesGroup();
-            thumbnails_group.title = I18n.tr("Thumbnails");
-
-            var thumbnail_background_row = new Adw.SwitchRow();
-            thumbnail_background_row.title = I18n.tr("Hide Nautilus thumbnail background");
-            thumbnail_background_row.subtitle = I18n.tr("Remove the alpha checkerboard behind thumbnails and icons");
-            settings.bind("remove-thumbnail-checkerboard", thumbnail_background_row, "active", GLib.SettingsBindFlags.DEFAULT);
-
-            settings.changed["remove-thumbnail-checkerboard"].connect(() => {
-                apply_thumbnail_background_preference(settings.get_boolean("remove-thumbnail-checkerboard"));
-            });
-
-            thumbnails_group.add(thumbnail_background_row);
-
+            // Automatic updates group
             var updates_group = new Adw.PreferencesGroup();
             updates_group.title = I18n.tr("Automatic updates");
             updates_group.description = I18n.tr("Configure automatic update checking");
@@ -63,16 +51,26 @@ namespace AppManager {
             });
             updates_group.header_suffix = log_button;
 
-            var auto_check_row = new Adw.SwitchRow();
-            auto_check_row.title = I18n.tr("Check for updates automatically");
-            auto_check_row.subtitle = I18n.tr("Periodically check for new versions in the background");
-            settings.bind("auto-check-updates", auto_check_row, "active", GLib.SettingsBindFlags.DEFAULT);
-            this.auto_check_row = auto_check_row;
+            // Background update check expander row
+            var auto_check_expander = new Adw.ExpanderRow();
+            auto_check_expander.title = I18n.tr("Background update check");
+            auto_check_expander.subtitle = I18n.tr("Will notify when new app updates are available");
+            auto_check_expander.show_enable_switch = true;
+            settings.bind("auto-check-updates", auto_check_expander, "enable-expansion", GLib.SettingsBindFlags.DEFAULT);
+            this.auto_check_expander = auto_check_expander;
 
             settings.changed["auto-check-updates"].connect(() => {
                 handle_auto_update_toggle(settings.get_boolean("auto-check-updates"));
             });
 
+            // Auto update apps toggle (inside expander)
+            var auto_update_row = new Adw.SwitchRow();
+            auto_update_row.title = I18n.tr("Auto update apps");
+            auto_update_row.subtitle = I18n.tr("Will update apps automatically in background");
+            settings.bind("auto-update-apps", auto_update_row, "active", GLib.SettingsBindFlags.DEFAULT);
+            this.auto_update_row = auto_update_row;
+
+            // Check interval (inside expander)
             var interval_row = new Adw.ComboRow();
             interval_row.title = I18n.tr("Check interval");
             var interval_model = new Gtk.StringList(null);
@@ -81,7 +79,6 @@ namespace AppManager {
             interval_model.append(I18n.tr("Monthly"));
             interval_row.model = interval_model;
             interval_row.selected = interval_index_for_value(settings.get_int("update-check-interval"));
-            settings.bind("auto-check-updates", interval_row, "sensitive", GLib.SettingsBindFlags.GET);
             this.interval_row = interval_row;
 
             interval_row.notify["selected"].connect(() => {
@@ -96,8 +93,26 @@ namespace AppManager {
                 interval_row.selected = interval_index_for_value(settings.get_int("update-check-interval"));
             });
 
-            updates_group.add(auto_check_row);
-            updates_group.add(interval_row);
+            // Add rows to expander
+            auto_check_expander.add_row(auto_update_row);
+            auto_check_expander.add_row(interval_row);
+
+            updates_group.add(auto_check_expander);
+
+            // Thumbnails group
+            var thumbnails_group = new Adw.PreferencesGroup();
+            thumbnails_group.title = I18n.tr("Thumbnails");
+
+            var thumbnail_background_row = new Adw.SwitchRow();
+            thumbnail_background_row.title = I18n.tr("Hide Nautilus thumbnail background");
+            thumbnail_background_row.subtitle = I18n.tr("Remove the alpha checkerboard behind thumbnails and icons");
+            settings.bind("remove-thumbnail-checkerboard", thumbnail_background_row, "active", GLib.SettingsBindFlags.DEFAULT);
+
+            settings.changed["remove-thumbnail-checkerboard"].connect(() => {
+                apply_thumbnail_background_preference(settings.get_boolean("remove-thumbnail-checkerboard"));
+            });
+
+            thumbnails_group.add(thumbnail_background_row);
 
             var links_group = new Adw.PreferencesGroup();
             links_group.title = I18n.tr("Find more AppImages");
@@ -133,8 +148,8 @@ namespace AppManager {
             });
             links_group.add(appimage_catalog_row);
 
-            page.add(thumbnails_group);
             page.add(updates_group);
+            page.add(thumbnails_group);
             page.add(links_group);
 
             this.add(page);

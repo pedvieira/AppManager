@@ -31,6 +31,11 @@
       <summary>Timestamp of last update check</summary>
       <description>Unix timestamp of the last successful background update check</description>
     </key>
+    <key name="auto-update-apps" type="b">
+      <default>false</default>
+      <summary>Automatically update apps in background</summary>
+      <description>When enabled, AppManager will automatically update apps when new versions are found. When disabled, only notifications will be shown.</description>
+    </key>
     <key name="remove-thumbnail-checkerboard" type="b">
       <default>false</default>
       <summary>Remove checkered background from thumbnails</summary>

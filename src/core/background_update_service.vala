@@ -145,6 +145,55 @@ X-XDP-Autostart=com.github.AppManager
                 return;
             }
 
+            bool auto_update_enabled = settings.get_boolean("auto-update-apps");
+
+            if (auto_update_enabled) {
+                // Auto-update mode: download and install updates
+                perform_auto_updates(cancellable);
+            } else {
+                // Notify-only mode: probe for updates and send notification
+                perform_update_probe(cancellable);
+            }
+
+            settings.set_int64("last-update-check", new GLib.DateTime.now_utc().to_unix());
+        }
+
+        /**
+         * Probes for available updates and sends a notification if any are found.
+         * Does not download or install updates.
+         */
+        private void perform_update_probe(Cancellable? cancellable) {
+            log_debug("background update: probing for updates (notify-only mode)");
+
+            var probe_results = updater.probe_updates(cancellable);
+            int updates_available = 0;
+            var app_names = new Gee.ArrayList<string>();
+
+            foreach (var result in probe_results) {
+                if (result.has_update) {
+                    updates_available++;
+                    var app_name = result.record.name ?? result.record.id;
+                    app_names.add(app_name);
+                    log_debug("background update: update available for %s (version: %s)".printf(
+                        app_name, result.available_version ?? "unknown"));
+                    append_update_log("UPDATE_AVAILABLE %s: %s".printf(
+                        app_name, result.available_version ?? "unknown"));
+                }
+            }
+
+            if (updates_available > 0) {
+                send_updates_notification(updates_available, app_names);
+            }
+
+            log_debug("background update: probe finished (updates_available=%d)".printf(updates_available));
+        }
+
+        /**
+         * Downloads and installs available updates (original behavior).
+         */
+        private void perform_auto_updates(Cancellable? cancellable) {
+            log_debug("background update: performing auto-updates");
+
             var results = updater.update_all(cancellable);
 
             int updated = 0;
@@ -170,7 +219,28 @@ X-XDP-Autostart=com.github.AppManager
             }
 
             log_debug("background update: finished (updated=%d skipped=%d failed=%d)".printf(updated, skipped, failed));
-            settings.set_int64("last-update-check", new GLib.DateTime.now_utc().to_unix());
+        }
+
+        /**
+         * Sends a desktop notification about available updates.
+         */
+        private void send_updates_notification(int count, Gee.ArrayList<string> app_names) {
+            var notification = new GLib.Notification(I18n.tr("App updates available"));
+            
+            string body;
+            if (count == 1) {
+                body = I18n.tr("Update available for %s").printf(app_names.get(0));
+            } else {
+                body = I18n.tr("%d app updates available").printf(count);
+            }
+            notification.set_body(body);
+            notification.set_priority(NotificationPriority.NORMAL);
+            
+            // Set default action to open the app
+            notification.set_default_action("app.activate");
+            
+            GLib.Application.get_default().send_notification("updates-available", notification);
+            log_debug("background update: sent notification for %d update(s)".printf(count));
         }
 
         public bool should_check_now() {
