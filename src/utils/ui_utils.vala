@@ -164,17 +164,23 @@ namespace AppManager.Utils {
                     return Gdk.Texture.from_file(file);
                 }
                 
-                // Fallback: try the new hicolor location if icon was at old flat icons dir
-                // Old path: ~/.local/share/icons/icon.svg
-                // New path: ~/.local/share/icons/hicolor/scalable/apps/icon.svg
+                // Fallback: check both icon locations for backward compatibility
+                // Icons may be in flat icons/ dir or hicolor/scalable/apps/
+                var icon_basename = file.get_basename();
                 var icons_base = Path.build_filename(Environment.get_user_data_dir(), "icons");
-                if (record.icon_path.has_prefix(icons_base)) {
-                    var icon_basename = file.get_basename();
-                    var new_path = Path.build_filename(icons_base, "hicolor", "scalable", "apps", icon_basename);
-                    var new_file = File.new_for_path(new_path);
-                    if (new_file.query_exists()) {
-                        return Gdk.Texture.from_file(new_file);
-                    }
+                
+                // Try hicolor/scalable/apps/ location
+                var scalable_path = Path.build_filename(icons_base, "hicolor", "scalable", "apps", icon_basename);
+                var scalable_file = File.new_for_path(scalable_path);
+                if (scalable_file.query_exists()) {
+                    return Gdk.Texture.from_file(scalable_file);
+                }
+                
+                // Try flat icons/ location
+                var flat_path = Path.build_filename(icons_base, icon_basename);
+                var flat_file = File.new_for_path(flat_path);
+                if (flat_file.query_exists()) {
+                    return Gdk.Texture.from_file(flat_file);
                 }
             } catch (Error e) {
                 warning("Failed to load record icon: %s", e.message);
