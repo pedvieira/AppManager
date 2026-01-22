@@ -287,12 +287,8 @@ namespace AppManager.Core {
             }
 
             // GitHub releases zsync: gh-releases-zsync|owner|repo|tag|pattern
-            var resolved_url = resolve_gh_releases_zsync(zsync_info);
-            if (resolved_url != null) {
-                return new ZsyncDirectSource(resolved_url);
-            }
-
-            return null;
+            // This returns the source with version info for comparison
+            return resolve_gh_releases_zsync_source(zsync_info);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -307,7 +303,7 @@ namespace AppManager.Core {
             }
 
             // Handle gh-releases-zsync by resolving to actual zsync URL
-            var resolved_zsync_url = resolve_gh_releases_zsync(update_url);
+            var resolved_zsync_url = resolve_gh_releases_zsync(update_url);;
             if (resolved_zsync_url != null) {
                 return new ZsyncDirectSource(resolved_zsync_url);
             }
@@ -332,11 +328,11 @@ namespace AppManager.Core {
         }
 
         /**
-         * Resolve gh-releases-zsync format to actual zsync download URL.
+         * Resolve gh-releases-zsync format to actual zsync download URL and version.
          * Format: gh-releases-zsync|owner|repo|tag|filename-pattern
-         * Returns the resolved URL or null if not a gh-releases-zsync format or resolution fails.
+         * Returns the resolved ZsyncDirectSource with version, or null if resolution fails.
          */
-        private string? resolve_gh_releases_zsync(string update_info) {
+        private ZsyncDirectSource? resolve_gh_releases_zsync_source(string update_info) {
             if (!update_info.has_prefix("gh-releases-zsync|")) {
                 return null;
             }
@@ -369,7 +365,7 @@ namespace AppManager.Core {
                 
                 // Find matching asset
                 if (tag == "latest" && root.get_node_type() == Json.NodeType.OBJECT) {
-                    return find_zsync_asset_url(root.get_object(), pattern);
+                    return find_zsync_asset_with_version(root.get_object(), pattern);
                 } else if (root.get_node_type() == Json.NodeType.ARRAY) {
                     var array = root.get_array();
                     for (uint i = 0; i < array.get_length(); i++) {
@@ -385,8 +381,8 @@ namespace AppManager.Core {
                             }
                         }
                         
-                        var url = find_zsync_asset_url(obj, pattern);
-                        if (url != null) return url;
+                        var source = find_zsync_asset_with_version(obj, pattern);
+                        if (source != null) return source;
                     }
                 }
             } catch (Error e) {
@@ -397,10 +393,35 @@ namespace AppManager.Core {
         }
 
         /**
-         * Find zsync asset URL in a GitHub release object matching the pattern.
+         * Legacy: Resolve gh-releases-zsync format to actual zsync download URL.
+         * Format: gh-releases-zsync|owner|repo|tag|filename-pattern
+         * Returns the resolved URL or null if not a gh-releases-zsync format or resolution fails.
          */
-        private string? find_zsync_asset_url(Json.Object release_obj, string pattern) {
+        private string? resolve_gh_releases_zsync(string update_info) {
+            var source = resolve_gh_releases_zsync_source(update_info);
+            return source != null ? source.zsync_url : null;
+        }
+
+        /**
+         * Find zsync asset URL and version in a GitHub release object matching the pattern.
+         */
+        private ZsyncDirectSource? find_zsync_asset_with_version(Json.Object release_obj, string pattern) {
             if (!release_obj.has_member("assets")) return null;
+            
+            // Extract version from tag_name
+            string? version = null;
+            if (release_obj.has_member("tag_name")) {
+                var tag_name = release_obj.get_string_member("tag_name");
+                // Handle tags like "3.1.1-2@2026-01-22_1769070653" → "3.1.1-2"
+                if (tag_name != null) {
+                    var at_pos = tag_name.index_of("@");
+                    if (at_pos > 0) {
+                        version = tag_name.substring(0, at_pos);
+                    } else {
+                        version = tag_name;
+                    }
+                }
+            }
             
             var assets = release_obj.get_array_member("assets");
             for (uint i = 0; i < assets.get_length(); i++) {
@@ -412,7 +433,8 @@ namespace AppManager.Core {
                 
                 var name = asset.get_string_member("name");
                 if (pattern_matches_zsync(pattern, name)) {
-                    return asset.get_string_member("browser_download_url");
+                    var url = asset.get_string_member("browser_download_url");
+                    return new ZsyncDirectSource(url, version);
                 }
             }
             return null;
@@ -1140,21 +1162,52 @@ namespace AppManager.Core {
 
         /**
          * Check if zsync update is available for a record.
-         * Performs HEAD request to check zsync file accessibility and compare fingerprints.
+         * Compares the remote version from the release with the installed version.
          */
         private UpdateProbeResult probe_zsync(InstallationRecord record, UpdateSource source, GLib.Cancellable? cancellable) {
             if (!(source is ZsyncDirectSource)) {
                 return new UpdateProbeResult(record, false, null, UpdateSkipReason.UNSUPPORTED_SOURCE, I18n.tr("Unknown zsync source type"));
             }
             
+            var zsync_source = source as ZsyncDirectSource;
+            var remote_version = zsync_source.remote_version;
+            var current_version = record.version;
+            
+            // If we have version info from the release, use version comparison
+            if (remote_version != null && remote_version.strip() != "") {
+                // Compare versions
+                if (current_version != null && current_version.strip() != "") {
+                    var cmp = compare_versions(remote_version, current_version);
+                    if (cmp <= 0) {
+                        // Remote version is same or older than current
+                        return new UpdateProbeResult(record, false, remote_version, UpdateSkipReason.ALREADY_CURRENT, I18n.tr("Already up to date"));
+                    }
+                    // Remote version is newer
+                    return new UpdateProbeResult(record, true, remote_version);
+                }
+                // No current version to compare, assume update available
+                return new UpdateProbeResult(record, true, remote_version);
+            }
+            
+            // Fallback to fingerprint comparison for direct zsync URLs without version info
             try {
-                var zsync_source = source as ZsyncDirectSource;
-                // Check if zsync file is accessible
                 var message = send_head(zsync_source.zsync_url, cancellable);
                 var fingerprint = build_direct_fingerprint(message);
+                
+                if (fingerprint == null) {
+                    return new UpdateProbeResult(record, false, null, UpdateSkipReason.NO_TRACKING_HEADERS, I18n.tr("Server does not provide change tracking headers"));
+                }
+                
                 var stored = get_stored_fingerprint(record);
                 
-                if (stored != null && fingerprint != null && stored == fingerprint) {
+                if (stored == null) {
+                    // First time: record baseline fingerprint
+                    store_fingerprint(record, message);
+                    registry.persist(false);
+                    return new UpdateProbeResult(record, false, fingerprint, UpdateSkipReason.ALREADY_CURRENT, I18n.tr("Baseline recorded"));
+                }
+                
+                if (stored == fingerprint) {
                     return new UpdateProbeResult(record, false, fingerprint, UpdateSkipReason.ALREADY_CURRENT, I18n.tr("Already up to date"));
                 }
                 

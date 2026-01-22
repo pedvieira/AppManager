@@ -136,10 +136,12 @@ namespace AppManager.Core {
      */
     public class ZsyncDirectSource : UpdateSource {
         public string zsync_url { get; private set; }
+        public string? remote_version { get; private set; }
 
-        public ZsyncDirectSource(string zsync_url) {
+        public ZsyncDirectSource(string zsync_url, string? remote_version = null) {
             Object();
             this.zsync_url = zsync_url;
+            this.remote_version = remote_version;
         }
 
         /**
