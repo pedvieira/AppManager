@@ -571,6 +571,10 @@ namespace AppManager.Core {
             // Remove TryExec
             entry.remove_key("TryExec");
             
+            // Disable DBusActivatable - AppImages don't have D-Bus service files,
+            // so we must force the launcher to use Exec= instead of D-Bus activation
+            entry.remove_key("DBusActivatable");
+            
             // Add Uninstall action block
             var uninstall_exec = build_uninstall_exec(record.installed_path);
             entry.set_action_group("Uninstall", I18n.tr("Move to Trash"), uninstall_exec, "user-trash");
