@@ -394,7 +394,9 @@ namespace AppManager.Core {
                 var effective_web_page = record.get_effective_web_page();
                 
                 var desktop_contents = rewrite_desktop(desktop_path, exec_path, record, is_terminal_app, final_slug, is_upgrade, effective_icon, effective_keywords, effective_wmclass, effective_args, effective_update_link, effective_web_page);
-                var desktop_filename = "%s-%s.desktop".printf(DESKTOP_FILE_PREFIX, final_slug);
+                
+                // Preserve original bundled desktop filename for proper desktop integration
+                var desktop_filename = Path.get_basename(desktop_path);
                 var desktop_destination = Path.build_filename(AppPaths.desktop_dir, desktop_filename);
                 Utils.FileUtils.ensure_parent(desktop_destination);
                 
