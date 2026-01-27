@@ -15,6 +15,13 @@ EXTRACT_DIR="dwarfs-${VERSION}-Linux-${ARCH}"
 mkdir -p "$OUTPUT_DIR"
 cd "$OUTPUT_DIR"
 
+# Check if tools already exist and are executable
+if [ -x "dwarfsextract" ] && [ -x "dwarfsck" ]; then
+    echo "DwarFS tools already exist in $OUTPUT_DIR, skipping download"
+    ls -la dwarfsextract dwarfsck
+    exit 0
+fi
+
 # Download if not already present
 if [ ! -f "$TARBALL" ]; then
     echo "Downloading $TARBALL..."

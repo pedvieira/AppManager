@@ -28,6 +28,13 @@ esac
 mkdir -p "$OUTPUT_DIR"
 cd "$OUTPUT_DIR"
 
+# Check if zsync2 already exists and is executable
+if [ -x "zsync2" ]; then
+    echo "zsync2 already exists in $OUTPUT_DIR, skipping download"
+    ls -la zsync2
+    exit 0
+fi
+
 # Get the latest release asset URL using GitHub API
 echo "Finding latest zsync2 release for ${ZSYNC2_ARCH}..."
 ZSYNC2_URL=$(curl -s "https://api.github.com/repos/${ZSYNC2_REPO}/releases/latest" | \

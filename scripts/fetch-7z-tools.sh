@@ -33,6 +33,13 @@ URL="https://www.7-zip.org/a/${TARBALL}"
 mkdir -p "$OUTPUT_DIR"
 cd "$OUTPUT_DIR"
 
+# Check if 7z already exists and is executable
+if [ -x "7z" ]; then
+    echo "7-Zip already exists in $OUTPUT_DIR, skipping download"
+    ls -la 7z
+    exit 0
+fi
+
 # Download if not already present
 if [ ! -f "$TARBALL" ]; then
     echo "Downloading 7-Zip ${VERSION} for ${SEVENZIP_ARCH}..."
