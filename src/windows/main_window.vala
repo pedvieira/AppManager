@@ -1247,8 +1247,14 @@ namespace AppManager {
             var key = record_state_key(result.record);
             if (result.has_update) {
                 pending_update_keys.add(key);
+                // Stage the update so it persists across app restarts
+                staged_updates.add(result.record.id, result.record.name, result.available_version);
+                staged_updates.save();
             } else {
                 pending_update_keys.remove(key);
+                // Remove from staged updates if no longer has an update
+                staged_updates.remove(result.record.id);
+                staged_updates.save();
             }
 
             refresh_installations();
