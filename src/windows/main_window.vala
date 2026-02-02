@@ -218,23 +218,13 @@ namespace AppManager {
             });
             links_group.add(pkgforge_row);
 
-            var appimagehub_row = new Adw.ActionRow();
-            appimagehub_row.title = "AppImageHub";
-            appimagehub_row.subtitle = "appimagehub.com";
-            appimagehub_row.activatable = true;
-            appimagehub_row.add_suffix(new Gtk.Image.from_icon_name("external-link-symbolic"));
-            appimagehub_row.activated.connect(() => {
-                UiUtils.open_url("https://www.appimagehub.com/");
-            });
-            links_group.add(appimagehub_row);
-
             var appimage_catalog_row = new Adw.ActionRow();
-            appimage_catalog_row.title = "AppImage Catalog";
-            appimage_catalog_row.subtitle = "appimage.github.io";
+            appimage_catalog_row.title = "Portable Linux Apps";
+            appimage_catalog_row.subtitle = "portable-linux-apps.github.io";
             appimage_catalog_row.activatable = true;
             appimage_catalog_row.add_suffix(new Gtk.Image.from_icon_name("external-link-symbolic"));
             appimage_catalog_row.activated.connect(() => {
-                UiUtils.open_url("https://appimage.github.io/");
+                UiUtils.open_url("https://portable-linux-apps.github.io//apps.html");
             });
             links_group.add(appimage_catalog_row);
 
