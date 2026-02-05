@@ -7,7 +7,9 @@
 ![Vala](https://img.shields.io/badge/Vala-compiler-blue?logo=vala)
 [![Stars](https://img.shields.io/github/stars/kem-a/AppManager?style=social)](https://github.com/kem-a/AppManager/stargazers)
 
-# <img width="48" height="48" alt="org github AppManager" src="https://github.com/user-attachments/assets/57e52017-df9e-49ac-8490-bc0db6e6a00e" /> AppManager
+# <img width="48" height="48" alt="com github AppManager" src="https://github.com/user-attachments/assets/879952cc-d0b3-48c8-aa35-1132c7423fe0" /> AppManager
+
+
 
 AppManager is a GTK/Libadwaita developed desktop utility in Vala that makes installing and uninstalling AppImages on Linux desktop painless. Double-click any `.AppImage` to open a macOS-style drag-and-drop window, just drag to install and AppManager will move the app, wire up desktop entries, and copy icons.
 
