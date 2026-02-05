@@ -42,6 +42,6 @@ gnome.post_install(
   update_desktop_database: true
 )
 
-install_data('icons/com.github.AppManager.svg',
+install_data('icons/hicolor/scalable/apps/com.github.AppManager.svg',
   install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', 'scalable', 'apps')
 )
