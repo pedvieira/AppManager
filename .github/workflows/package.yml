@@ -87,10 +87,24 @@ jobs:
           # Copy installed files
           cp -a "$DESTDIR/usr" "$APPDIR/"
 
+          # Bundle shared libraries that may not be present on non-GNOME systems
+          # (e.g. KDE-based distros like CachyOS KDE)
+          mkdir -p "$APPDIR/usr/lib"
+          for lib in libgee-0.8.so libsoup-3.0.so; do
+            lib_path=$(ldd "$DESTDIR/usr/bin/app-manager" 2>/dev/null | grep "$lib" | awk '{print $3}' | head -1)
+            if [ -n "$lib_path" ] && [ -f "$lib_path" ]; then
+              cp -L "$lib_path" "$APPDIR/usr/lib/"
+              echo "Bundled: $lib → $(basename "$lib_path") ($lib_path)"
+            else
+              echo "Warning: $lib not found via ldd, skipping"
+            fi
+          done
+
           # Create AppRun script
           printf '%s\n' '#!/bin/bash' \
             'HERE="$(dirname "$(readlink -f "$0")")"' \
             'export APPDIR="$HERE"' \
+            'export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:-}"' \
             'export GSETTINGS_SCHEMA_DIR="$HERE/usr/share/glib-2.0/schemas:${GSETTINGS_SCHEMA_DIR:-}"' \
             'export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"' \
             'export PATH="$HERE/usr/bin:$PATH"' \
@@ -210,10 +224,24 @@ jobs:
           # Copy installed files
           cp -a "$DESTDIR/usr" "$APPDIR/"
 
+          # Bundle shared libraries that may not be present on non-GNOME systems
+          # (e.g. KDE-based distros like CachyOS KDE)
+          mkdir -p "$APPDIR/usr/lib"
+          for lib in libgee-0.8.so libsoup-3.0.so; do
+            lib_path=$(ldd "$DESTDIR/usr/bin/app-manager" 2>/dev/null | grep "$lib" | awk '{print $3}' | head -1)
+            if [ -n "$lib_path" ] && [ -f "$lib_path" ]; then
+              cp -L "$lib_path" "$APPDIR/usr/lib/"
+              echo "Bundled: $lib → $(basename "$lib_path") ($lib_path)"
+            else
+              echo "Warning: $lib not found via ldd, skipping"
+            fi
+          done
+
           # Create AppRun script
           printf '%s\n' '#!/bin/bash' \
             'HERE="$(dirname "$(readlink -f "$0")")"' \
             'export APPDIR="$HERE"' \
+            'export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:-}"' \
             'export GSETTINGS_SCHEMA_DIR="$HERE/usr/share/glib-2.0/schemas:${GSETTINGS_SCHEMA_DIR:-}"' \
             'export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"' \
             'export PATH="$HERE/usr/bin:$PATH"' \

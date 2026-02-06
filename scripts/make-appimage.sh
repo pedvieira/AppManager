@@ -88,11 +88,39 @@ cp -a "$INSTALL_ROOT"/* "$APPDIR/usr/"
 
 # DwarFS tools are now installed directly to bin via meson
 
+# Bundle shared libraries that may not be present on non-GNOME systems
+# (e.g. KDE-based distros like CachyOS KDE)
+mkdir -p "$APPDIR/usr/lib"
+
+bundle_lib() {
+    local lib_name="$1"
+    local lib_path
+    # Resolve the versioned .so path using the linker (most reliable)
+    lib_path=$(ldd "$BUILD_DIR/src/$BINARY_NAME" 2>/dev/null | grep "$lib_name" | awk '{print $3}' | head -1)
+    if [ -n "$lib_path" ] && [ -f "$lib_path" ]; then
+        cp -L "$lib_path" "$APPDIR/usr/lib/"
+        echo "Bundled: $lib_name → $(basename "$lib_path") ($lib_path)"
+    else
+        echo "Warning: $lib_name not found via ldd, skipping"
+    fi
+    if [ -n "$lib_path" ] && [ -f "$lib_path" ]; then
+        cp -L "$lib_path" "$APPDIR/usr/lib/"
+        echo "Bundled: $lib_name ($lib_path)"
+    else
+        echo "Warning: $lib_name not found on system, skipping"
+    fi
+}
+
+bundle_lib "libgee-0.8.so"
+bundle_lib "libsoup-3.0.so"
+
 # Create AppRun script that sets up environment for GSettings schemas
+# and bundled libraries
 cat > "$APPDIR/AppRun" << 'EOF'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "$0")")"
 export APPDIR="$HERE"
+export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:-}"
 export GSETTINGS_SCHEMA_DIR="$HERE/usr/share/glib-2.0/schemas:${GSETTINGS_SCHEMA_DIR:-}"
 export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export PATH="$HERE/usr/bin:$PATH"

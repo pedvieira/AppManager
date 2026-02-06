@@ -53,7 +53,7 @@ sudo dnf install vala meson ninja-build gtk4-devel libadwaita-devel glib2-devel 
 - **Arch Linux / Manjaro:**
 
 ```bash
-sudo pacman -S vala meson ninja gtk4 libadwaita glib2 json-glib gee libsoup p7zip cmake desktop-file-utils jq
+sudo pacman -S vala meson ninja gtk4 libadwaita glib2 json-glib libgee libsoup p7zip cmake desktop-file-utils jq
 ```
 
 </details>
