@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     name: "Build AppImage (${{ matrix.arch }})"
+    permissions:
+      contents: read
     runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
