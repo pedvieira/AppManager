@@ -97,6 +97,25 @@ if [ -n "$EXTRACTED_BIN" ]; then
     cp "$EXTRACTED_BIN" zsync2
     chmod +x zsync2
     echo "Extracted native zsync2 binary"
+
+    # Also install any bundled shared libraries that aren't available on the
+    # build system (e.g. OpenSSL 1.1 libs needed by zsync2).  This allows
+    # quick-sharun / ldd to resolve all dependencies when repackaging.
+    if command -v ldd >/dev/null 2>&1; then
+        missing_libs=$(ldd zsync2 2>/dev/null | grep "not found" | awk '{print $1}' || true)
+        if [ -n "$missing_libs" ]; then
+            echo "Installing bundled libraries needed by zsync2..."
+            for lib in $missing_libs; do
+                found=$(find "$EXTRACT_DIR" -name "$lib" -type f 2>/dev/null | head -1)
+                if [ -n "$found" ]; then
+                    cp "$found" /usr/lib/
+                    echo "  installed $lib"
+                fi
+            done
+            # Refresh linker cache
+            ldconfig 2>/dev/null || true
+        fi
+    fi
 else
     # Fallback: use the AppImage directly (will work on systems with FUSE
     # but may not survive repackaging by quick-sharun)
