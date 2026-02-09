@@ -9,8 +9,7 @@ appimaged/
 appimagetool/
 squashfs-root/
 squashfs-*.img
-build/
-build-anyimage/
+build*/
 dist/
 AppDir/
 .directory

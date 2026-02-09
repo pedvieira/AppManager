@@ -108,7 +108,7 @@ core_sources += build_info
 if bundle_dwarfs and dwarfs_arch != ''
   fetch_script = files('scripts/fetch-dwarfs-tools.sh')
   dwarfs_tools = custom_target('dwarfs-tools',
-    output: ['dwarfsextract', 'dwarfsck'],
+    output: ['dwarfsextract'],
     build_by_default: bundle_dwarfs,
     command: ['sh', fetch_script, dwarfs_version, dwarfs_arch, meson.current_build_dir()],
     install: true,

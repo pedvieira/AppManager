@@ -14,7 +14,6 @@ namespace AppManager.Core {
         private static bool checked_tools = false;
         private static bool available_cache = false;
         private static string? extract_path = null;
-        private static string? check_path = null;
         private static bool missing_logged = false;
 
         private static void init_tool_paths() {
@@ -57,27 +56,20 @@ namespace AppManager.Core {
 
             foreach (var base_dir in candidates) {
                 var extract_candidate = Path.build_filename(base_dir, "dwarfsextract");
-                var check_candidate = Path.build_filename(base_dir, "dwarfsck");
-                if (FileUtils.test(extract_candidate, FileTest.IS_EXECUTABLE) &&
-                    FileUtils.test(check_candidate, FileTest.IS_EXECUTABLE)) {
+                if (FileUtils.test(extract_candidate, FileTest.IS_EXECUTABLE)) {
                     extract_path = extract_candidate;
-                    check_path = check_candidate;
                     break;
                 }
             }
 
-            if (extract_path == null || check_path == null) {
+            if (extract_path == null) {
                 var extract_found = Environment.find_program_in_path("dwarfsextract");
-                var check_found = Environment.find_program_in_path("dwarfsck");
                 if (extract_found != null && extract_found.strip() != "") {
                     extract_path = extract_found;
                 }
-                if (check_found != null && check_found.strip() != "") {
-                    check_path = check_found;
-                }
             }
 
-            available_cache = extract_path != null && check_path != null;
+            available_cache = extract_path != null;
             checked_tools = true;
         }
 
@@ -91,7 +83,7 @@ namespace AppManager.Core {
                 return;
             }
             missing_logged = true;
-            warning("DwarFS tools not found. Install or place dwarfsextract/dwarfsck in PATH, APP_MANAGER_DWARFS_DIR, /usr/lib/app-manager, or ~/.local/share/app-manager/dwarfs for DwarFS AppImages.");
+            warning("DwarFS tools not found. Install or place dwarfsextract in PATH, APP_MANAGER_DWARFS_DIR, /usr/lib/app-manager, or ~/.local/share/app-manager/dwarfs for DwarFS AppImages.");
         }
 
         /**
@@ -136,82 +128,35 @@ namespace AppManager.Core {
         }
 
         /**
-         * Lists all paths in a DwarFS archive.
-         * Returns null if tools unavailable or listing fails.
+         * Checks whether a DwarFS archive contains at least one entry matching pattern.
+         * Uses streaming tar output (no disk writes) to probe for file existence.
+         * An empty tar archive is 1024 bytes; any match produces > 1024 bytes.
          */
-        public static Gee.ArrayList<string>? list_paths(string archive) {
+        public static bool has_entry(string archive, string pattern) {
             if (!available()) {
                 log_missing_once();
-                return null;
+                return false;
             }
 
             try {
-                string? stdout_str;
-                string? stderr_str;
-                var cmd = new string[] {check_path ?? "dwarfsck", "-l", "--no-check", "-O", "auto", archive};
-                int exit_status = execute(cmd, out stdout_str, out stderr_str);
-                if (exit_status != 0) {
-                    debug("dwarfsck list failed (%d): %s", exit_status, stderr_str ?? "");
-                    return null;
-                }
+                var cleaned = strip_leading_slashes(pattern);
+                var proc = new GLib.Subprocess.newv(new string[] {
+                    extract_path ?? "dwarfsextract",
+                    "-i", archive,
+                    "-O", "auto",
+                    "-f", "ustar",
+                    "--pattern", cleaned,
+                    "--log-level=error"
+                }, SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_SILENCE);
 
-                var paths = new Gee.ArrayList<string>();
-                if (stdout_str == null) {
-                    return null;
-                }
-
-                foreach (var raw_line in stdout_str.split("\n")) {
-                    var line = raw_line.strip();
-                    if (line == "") {
-                        continue;
-                    }
-
-                    // DwarFS uses ls-like output; extract the first token that looks like a path and keep the rest (supports spaces).
-                    var tokens = new Gee.ArrayList<string>();
-                    foreach (var part in raw_line.replace("\t", " ").split(" ")) {
-                        var trimmed = part.strip();
-                        if (trimmed != "") {
-                            tokens.add(trimmed);
-                        }
-                    }
-
-                    if (tokens.size == 0) {
-                        continue;
-                    }
-
-                    int path_index = -1;
-                    for (int i = 0; i < tokens.size; i++) {
-                        if (looks_like_path_token(tokens.get(i))) {
-                            path_index = i;
-                            break;
-                        }
-                    }
-
-                    if (path_index < 0) {
-                        path_index = tokens.size - 1;
-                    }
-
-                    var builder = new StringBuilder();
-                    for (int i = path_index; i < tokens.size; i++) {
-                        if (tokens.get(i) == "->") {
-                            break; // stop before symlink target
-                        }
-                        if (builder.len > 0) {
-                            builder.append(" ");
-                        }
-                        builder.append(tokens.get(i));
-                    }
-
-                    var path = strip_leading_slashes(builder.str.strip());
-                    if (path != "") {
-                        paths.add(path);
-                    }
-                }
-
-                return paths.size > 0 ? paths : null;
+                GLib.Bytes stdout_bytes;
+                proc.communicate(null, null, out stdout_bytes, null);
+                // An empty ustar archive is exactly 1024 bytes (two 512-byte zero blocks).
+                // Any matched file produces > 1024 bytes of tar output.
+                return stdout_bytes != null && stdout_bytes.get_size() > 1024;
             } catch (Error e) {
-                debug("Failed to list DwarFS paths: %s", e.message);
-                return null;
+                debug("Failed to probe DwarFS archive: %s", e.message);
+                return false;
             }
         }
 
@@ -229,15 +174,6 @@ namespace AppManager.Core {
             return result;
         }
 
-        private static bool looks_like_path_token(string token) {
-            return token.contains("/") ||
-                token == "AppRun" ||
-                token.has_suffix(".desktop") ||
-                token.has_suffix(".png") ||
-                token.has_suffix(".svg") ||
-                token.has_suffix(".DirIcon") ||
-                token == ".DirIcon";
-        }
     }
 
     public class AppImageAssets : Object {
@@ -438,26 +374,41 @@ namespace AppManager.Core {
         }
 
         public static bool check_compatibility(string appimage_path) {
-            var paths = list_archive_paths(appimage_path);
-            if (paths == null) {
-                return false;
+            // Try SquashFS path via 7z listing first
+            var paths = list_archive_paths_7z(appimage_path);
+            if (paths != null) {
+                if (!archive_has_pattern(paths, "*.desktop")) {
+                    return false;
+                }
+                bool has_icon = archive_has_pattern(paths, "*.png") ||
+                               archive_has_pattern(paths, "*.svg") ||
+                               archive_has_pattern(paths, DIRICON_NAME);
+                if (!has_icon) {
+                    return false;
+                }
+                if (!archive_has_pattern(paths, "AppRun")) {
+                    return false;
+                }
+                return true;
             }
 
-            if (!archive_has_pattern(paths, "*.desktop")) {
+            // DwarFS path — probe via streaming tar (no disk writes)
+            if (!DwarfsTools.available()) {
+                DwarfsTools.log_missing_once();
                 return false;
             }
-
-            bool has_icon = archive_has_pattern(paths, "*.png") ||
-                           archive_has_pattern(paths, "*.svg") ||
-                           archive_has_pattern(paths, DIRICON_NAME);
+            if (!DwarfsTools.has_entry(appimage_path, "*.desktop")) {
+                return false;
+            }
+            bool has_icon = DwarfsTools.has_entry(appimage_path, "*.png") ||
+                           DwarfsTools.has_entry(appimage_path, "*.svg") ||
+                           DwarfsTools.has_entry(appimage_path, DIRICON_NAME);
             if (!has_icon) {
                 return false;
             }
-
-            if (!archive_has_pattern(paths, "AppRun")) {
+            if (!DwarfsTools.has_entry(appimage_path, "AppRun")) {
                 return false;
             }
-
             return true;
         }
 
@@ -585,15 +536,6 @@ namespace AppManager.Core {
 
             var target_path = Path.build_filename(output_dir, pattern);
             return File.new_for_path(target_path).query_exists();
-        }
-
-        private static Gee.ArrayList<string>? list_archive_paths(string appimage_path) {
-            var paths = list_archive_paths_7z(appimage_path);
-            if (paths != null) {
-                return paths;
-            }
-            var dwarfs_paths = DwarfsTools.list_paths(appimage_path);
-            return dwarfs_paths;
         }
 
         private static Gee.ArrayList<string>? list_archive_paths_7z(string appimage_path) {

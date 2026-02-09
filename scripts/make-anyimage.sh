@@ -145,7 +145,6 @@ echo "---------------------------------------------------------------"
 "$QS" \
     /usr/bin/app-manager \
     /usr/bin/dwarfsextract \
-    /usr/bin/dwarfsck \
     /usr/bin/zsync2 \
     /usr/bin/7z \
     /usr/share/vala \

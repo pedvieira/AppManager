@@ -16,9 +16,9 @@ mkdir -p "$OUTPUT_DIR"
 cd "$OUTPUT_DIR"
 
 # Check if tools already exist and are executable
-if [ -x "dwarfsextract" ] && [ -x "dwarfsck" ]; then
+if [ -x "dwarfsextract" ]; then
     echo "DwarFS tools already exist in $OUTPUT_DIR, skipping download"
-    ls -la dwarfsextract dwarfsck
+    ls -la dwarfsextract
     exit 0
 fi
 
@@ -29,11 +29,10 @@ if [ ! -f "$TARBALL" ]; then
 fi
 
 # Extract the specific binaries we need
-echo "Extracting dwarfsextract and dwarfsck..."
-tar -xf "$TARBALL" "${EXTRACT_DIR}/bin/dwarfsextract" "${EXTRACT_DIR}/bin/dwarfsck"
+echo "Extracting dwarfsextract..."
+tar -xf "$TARBALL" "${EXTRACT_DIR}/bin/dwarfsextract"
 mv "${EXTRACT_DIR}/bin/dwarfsextract" .
-mv "${EXTRACT_DIR}/bin/dwarfsck" .
 rm -rf "$EXTRACT_DIR"
 
 echo "DwarFS tools extracted to $OUTPUT_DIR"
-ls -la dwarfsextract dwarfsck
+ls -la dwarfsextract
