@@ -12,6 +12,16 @@ namespace AppManager.Utils {
         private static bool app_css_applied = false;
         private static ulong css_display_handler = 0;
 
+        // Cache loaded textures to avoid re-reading from disk on every refresh
+        private static Gee.HashMap<string, Gdk.Paintable>? texture_cache = null;
+
+        private static Gee.HashMap<string, Gdk.Paintable> get_texture_cache() {
+            if (texture_cache == null) {
+                texture_cache = new Gee.HashMap<string, Gdk.Paintable>();
+            }
+            return texture_cache;
+        }
+
 
         public static Gdk.Paintable? load_icon_from_appimage(string path) {
             string? temp_dir = null;
@@ -51,10 +61,19 @@ namespace AppManager.Utils {
                 return icon_image;
             }
 
-            // Fallback to loading from file path
+            // Fallback to loading from file path with texture cache
+            var cache = get_texture_cache();
+            if (cache.has_key(icon_path)) {
+                var cached = cache.get(icon_path);
+                var icon_image = new Gtk.Image.from_paintable(cached);
+                icon_image.set_pixel_size(pixel_size);
+                return icon_image;
+            }
+
             if (icon_file.query_exists()) {
                 try {
                     var icon_texture = Gdk.Texture.from_file(icon_file);
+                    cache.set(icon_path, icon_texture);
                     var icon_image = new Gtk.Image.from_paintable(icon_texture);
                     icon_image.set_pixel_size(pixel_size);
                     return icon_image;
