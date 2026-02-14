@@ -820,11 +820,8 @@ namespace AppManager {
         }
 
         private GLib.Icon? load_applications_gicon() {
-            var applications_path = Path.build_filename(Environment.get_home_dir(), "Applications");
+            var applications_path = AppPaths.applications_dir;
             var applications_dir = File.new_for_path(applications_path);
-            
-            // Ensure the directory exists before querying its icon
-            DirUtils.create_with_parents(applications_path, 0755);
             
             try {
                 string attributes = "standard::icon";
